@@ -30,5 +30,7 @@ func Instance(group *echo.Group) {
 	group.DELETE("/delete/:id", controller.Delete)
 	group.PUT("/update/:id", controller.Update)
 	group.POST("/restart/:id", controller.Restart)
+	group.GET("/qrcode/:instance", controller.Qrcode)
+	group.POST("/setPresence/:instance", controller.SetPresence)
 
 }

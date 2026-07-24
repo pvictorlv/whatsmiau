@@ -16,6 +16,7 @@ const (
 	WookMessagesDelete          Wook = "messages.delete"
 	WookMessagesSet             Wook = "messages.set"
 	WookGroupParticipantsUpdate Wook = "group-participants.update"
+	WookQRCodeUpdated           Wook = "qrcode.updated"
 )
 
 type WookEvent[data any] struct {
@@ -305,6 +306,22 @@ type WookConnectionUpdateData struct {
 	ProfilePictureUrl string `json:"profilePictureUrl,omitempty"`
 	State             string `json:"state"`
 	StatusReason      int    `json:"statusReason,omitempty"`
+}
+
+// WookQRCode espelha o objeto `qrcode` do evento qrcode.updated da Evolution API.
+type WookQRCode struct {
+	Instance    string `json:"instance,omitempty"`
+	Code        string `json:"code,omitempty"`
+	Base64      string `json:"base64,omitempty"`
+	PairingCode string `json:"pairingCode,omitempty"`
+}
+
+// WookQRCodeUpdateData é o corpo do evento qrcode.updated. O CRM lê
+// data.statusCode (500 => erro/reinício) e data.qrcode.code (string do QR).
+type WookQRCodeUpdateData struct {
+	Instance   string      `json:"instance,omitempty"`
+	StatusCode int         `json:"statusCode,omitempty"`
+	QRCode     *WookQRCode `json:"qrcode,omitempty"`
 }
 
 type WookGroupParticipantsUpdateData struct {

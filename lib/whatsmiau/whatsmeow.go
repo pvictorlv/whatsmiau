@@ -434,6 +434,9 @@ func (s *Whatsmiau) observeConnection(client *whatsmeow.Client, id string, phone
 					// connect".
 					s.ensurePairingCode(ctx, id, client, phoneNumber)
 				}
+
+				pairingCode, _ := s.pairingCache.Load(id)
+				s.emitQRCodeUpdated(id, evt.Code, pairingCode)
 				continue
 			}
 

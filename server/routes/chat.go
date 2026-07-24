@@ -26,4 +26,12 @@ func ChatEVO(group *echo.Group) {
 	group.POST("/sendPresence/:instance", controller.SendChatPresence)
 	group.POST("/whatsappNumbers/:instance", controller.NumberExists)
 	group.DELETE("/deleteMessageForEveryone/:instance", controller.DeleteMessageForEveryone)
+	group.POST("/updateBlockStatus/:instance", controller.UpdateBlockStatus)
+	group.POST("/fetchProfile/:instance", controller.FetchProfile)
+	group.POST("/fetchProfilePictureUrl/:instance", controller.FetchProfilePictureUrl)
+	group.POST("/updateMessage/:instance", controller.UpdateMessage)
+	group.POST("/getBase64FromMediaMessage/:instance", controller.GetBase64FromMediaMessage)
+	group.POST("/fetchMessageHistory/:instance", controller.FetchMessageHistory)
+	group.POST("/findMessages/:instance", controller.FindMessages)
+	group.DELETE("/deleteOldMessages/:instance", controller.DeleteOldMessages)
 }
