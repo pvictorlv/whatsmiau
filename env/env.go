@@ -13,6 +13,7 @@ type E struct {
 	RedisURL      string `env:"REDIS_URL" envDefault:"localhost:6379"`
 	RedisPassword string `env:"REDIS_PASSWORD"`
 	RedisTLS      bool   `env:"REDIS_TLS" envDefault:"false"`
+	RedisDB       int    `env:"REDIS_DB" envDefault:"0"` // isola o whatsmiau num DB lógico próprio quando o Redis é compartilhado
 
 	ApiKey    string `env:"API_KEY" envDefault:""`
 	DBDialect string `env:"DIALECT_DB" envDefault:"sqlite3"`                   // sqlite3 or postgres

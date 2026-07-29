@@ -29,7 +29,7 @@ func NewRedis() (*redis.Client, error) {
 	opt := &redis.Options{
 		Addr:     env.Env.RedisURL,
 		Password: env.Env.RedisPassword,
-		DB:       0,
+		DB:       env.Env.RedisDB,
 	}
 
 	if env.Env.RedisTLS {

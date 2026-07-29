@@ -1,0 +1,3 @@
+# binário cross-compilado gerado pelo deploy.py
+whatsmiau-linux-amd64
+*.new
