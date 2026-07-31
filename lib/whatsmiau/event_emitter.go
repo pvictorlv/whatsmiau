@@ -230,6 +230,8 @@ func (s *Whatsmiau) Handle(id string) whatsmeow.EventHandler {
 			switch e := evt.(type) {
 			case *events.Message:
 				s.handleMessageEvent(id, instance, e, eventMap)
+			case *events.UndecryptableMessage:
+				s.handleUndecryptableMessageEvent(id, instance, e, eventMap)
 			case *events.Receipt:
 				s.handleReceiptEvent(id, instance, e, eventMap)
 			case *events.BusinessName:
@@ -257,6 +259,38 @@ func (s *Whatsmiau) Handle(id string) whatsmeow.EventHandler {
 				s.stopHistorySyncWatchdog(id)
 			case *events.StreamReplaced:
 				s.stopHistorySyncWatchdog(id)
+			case *events.CallOffer:
+				s.handleCallEvent(id, instance, e.CallCreator, e.CallID, e.Timestamp, "offer", eventMap)
+			case *events.CallOfferNotice:
+				s.handleCallEvent(id, instance, e.CallCreator, e.CallID, e.Timestamp, "offer", eventMap)
+			case *events.CallTerminate:
+				s.handleCallEvent(id, instance, e.CallCreator, e.CallID, e.Timestamp, "terminate", eventMap)
+			case *events.KeepAliveTimeout:
+				// The socket can stay CONNECTED while silently receiving nothing
+				// (zombie socket). Surfacing this is the only early warning.
+				zap.L().Error("keepalive timeout",
+					zap.String("instance", id),
+					zap.Int("error_count", e.ErrorCount),
+					zap.Time("last_success", e.LastSuccess))
+			case *events.KeepAliveRestored:
+				zap.L().Warn("keepalive restored", zap.String("instance", id))
+			case *events.TemporaryBan:
+				zap.L().Error("instance temporarily banned",
+					zap.String("instance", id),
+					zap.String("code", e.Code.String()),
+					zap.Duration("expire", e.Expire))
+			case *events.OfflineSyncPreview:
+				zap.L().Info("offline sync preview",
+					zap.String("instance", id),
+					zap.Int("messages", e.Messages),
+					zap.Int("receipts", e.Receipts),
+					zap.Int("notifications", e.Notifications))
+			case *events.OfflineSyncCompleted:
+				zap.L().Info("offline sync completed",
+					zap.String("instance", id),
+					zap.Int("count", e.Count))
+			case *events.MediaRetryError:
+				zap.L().Warn("media retry error", zap.String("instance", id), zap.Int("code", e.Code))
 			default:
 				zap.L().Debug("unknown event", zap.String("type", fmt.Sprintf("%T", evt)), zap.Any("raw", evt))
 			}
@@ -279,9 +313,25 @@ func (s *Whatsmiau) handleLoggedOut(id string) {
 }
 func (s *Whatsmiau) handleMessageEvent(id string, instance *models.Instance, e *events.Message, eventMap map[string]bool) {
 	if e.Message != nil {
-		if pm := e.Message.GetProtocolMessage(); pm != nil && pm.GetType() == waE2E.ProtocolMessage_REVOKE {
-			s.handleMessageDeleteEvent(id, instance, e, eventMap)
-			return
+		if pm := e.Message.GetProtocolMessage(); pm != nil {
+			switch pm.GetType() {
+			case waE2E.ProtocolMessage_REVOKE:
+				s.handleMessageDeleteEvent(id, instance, e, eventMap)
+				return
+			case waE2E.ProtocolMessage_MESSAGE_EDIT:
+				// Edits keep flowing through MESSAGES_UPSERT: whatsmeow already
+				// unwrapped the EditedMessage envelope, so the protocol message
+				// reaches the consumer verbatim via the protojson fallback and
+				// carries the target key plus the new content.
+			default:
+				// Ephemeral settings, app state sync keys, peer data operations
+				// and friends carry no user-visible content. Emitting them would
+				// create empty messages on the consumer side.
+				zap.L().Debug("skipping non-content protocol message",
+					zap.String("instance", id),
+					zap.String("type", pm.GetType().String()))
+				return
+			}
 		}
 	}
 
@@ -323,6 +373,98 @@ func (s *Whatsmiau) handleMessageEvent(id string, instance *models.Instance, e *
 	}
 
 	s.emit(wookMessage, instance.Webhook.Url, instance.Webhook.Headers)
+}
+
+// handleUndecryptableMessageEvent surfaces a message that arrived but could not
+// be decrypted. whatsmeow has already exhausted its retry receipts by this
+// point; without this handler the message is lost with no trace at all, which
+// is what made past "lost message" incidents impossible to diagnose.
+func (s *Whatsmiau) handleUndecryptableMessageEvent(id string, instance *models.Instance, e *events.UndecryptableMessage, eventMap map[string]bool) {
+	ctx, c := context.WithTimeout(context.Background(), time.Second*10)
+	defer c()
+
+	chatJid, chatLid := s.GetJidLid(ctx, id, e.Info.Chat)
+	senderJid, _ := s.GetJidLid(ctx, id, e.Info.Sender)
+
+	// Logged unconditionally: this is the signal that a message was lost, and it
+	// must not depend on the instance subscribing to the webhook event.
+	zap.L().Error("undecryptable message",
+		zap.String("instance", id),
+		zap.String("message_id", e.Info.ID),
+		zap.String("chat", chatJid),
+		zap.String("sender", senderJid),
+		zap.Bool("is_unavailable", e.IsUnavailable),
+		zap.String("unavailable_type", string(e.UnavailableType)),
+		zap.String("decrypt_fail_mode", string(e.DecryptFailMode)),
+		zap.Time("timestamp", e.Info.Timestamp))
+
+	if !eventMap["MESSAGES_UNDECRYPTABLE"] {
+		return
+	}
+
+	if canIgnoreGroup(e, instance) {
+		return
+	}
+
+	addressingMode := "lid"
+	if chatLid == "" {
+		addressingMode = "jid"
+	}
+
+	data := &WookMessageUndecryptableData{
+		Key: &WookKey{
+			RemoteJid:      chatJid,
+			RemoteLid:      chatLid,
+			FromMe:         e.Info.IsFromMe,
+			Id:             e.Info.ID,
+			Participant:    senderJid,
+			AddressingMode: addressingMode,
+		},
+		PushName:         strings.TrimSpace(e.Info.PushName),
+		IsUnavailable:    e.IsUnavailable,
+		UnavailableType:  string(e.UnavailableType),
+		DecryptFailMode:  string(e.DecryptFailMode),
+		IsGroup:          e.Info.IsGroup,
+		MessageTimestamp: int(e.Info.Timestamp.Unix()),
+		InstanceId:       instance.ID,
+	}
+
+	s.emit(&WookEvent[WookMessageUndecryptableData]{
+		Instance: instance.ID,
+		Data:     data,
+		DateTime: time.Now(),
+		Event:    WookMessagesUndecryptable,
+	}, instance.Webhook.Url, instance.Webhook.Headers)
+}
+
+// handleCallEvent forwards incoming call activity, which was previously dropped
+// entirely, so consumers can reject calls or log them against the contact.
+func (s *Whatsmiau) handleCallEvent(id string, instance *models.Instance, creator types.JID, callID string, timestamp time.Time, status string, eventMap map[string]bool) {
+	if !eventMap["CALL"] {
+		return
+	}
+
+	ctx, c := context.WithTimeout(context.Background(), time.Second*10)
+	defer c()
+
+	fromJid, fromLid := s.GetJidLid(ctx, id, creator)
+
+	data := &WookCallData{
+		Id:         callID,
+		From:       fromJid,
+		FromLid:    fromLid,
+		Status:     status,
+		Timestamp:  int(timestamp.Unix()),
+		InstanceId: instance.ID,
+	}
+
+	zap.L().Debug("call event", zap.String("instance", id), zap.Any("data", data))
+	s.emit(&WookEvent[WookCallData]{
+		Instance: instance.ID,
+		Data:     data,
+		DateTime: time.Now(),
+		Event:    WookCallUpsert,
+	}, instance.Webhook.Url, instance.Webhook.Headers)
 }
 
 func (s *Whatsmiau) handleMessageDeleteEvent(id string, instance *models.Instance, e *events.Message, eventMap map[string]bool) {
@@ -481,7 +623,15 @@ func (s *Whatsmiau) handleHistorySyncEvent(id string, instance *models.Instance,
 	progress := e.Data.GetProgress()
 	isLatest := progress >= 100
 
-	if instance.SyncFullHistory && eventMap["MESSAGES_SET"] {
+	// An on-demand sync is the answer to an explicit recovery request (a lost
+	// message being re-fetched from the phone). It must be delivered regardless
+	// of SyncFullHistory, which only governs the bulk import at pairing time.
+	onDemand := e.Data.GetSyncType() == waHistorySync.HistorySync_ON_DEMAND
+
+	if (instance.SyncFullHistory || onDemand) && eventMap["MESSAGES_SET"] {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
+		defer cancel()
+
 		var messages []WookMessageData
 		for _, conv := range e.Data.Conversations {
 			for _, msg := range conv.GetMessages() {
@@ -489,7 +639,7 @@ func (s *Whatsmiau) handleHistorySyncEvent(id string, instance *models.Instance,
 					continue
 				}
 
-				messageData := s.buildMessageDataFromHistory(msg.Message, conv.GetName(), conv.GetDisplayName())
+				messageData := s.buildMessageDataFromHistory(ctx, id, msg.Message, conv.GetName(), conv.GetDisplayName())
 				if messageData == nil {
 					continue
 				}
@@ -512,11 +662,16 @@ func (s *Whatsmiau) handleHistorySyncEvent(id string, instance *models.Instance,
 			s.emit(wookEvent, instance.Webhook.Url, instance.Webhook.Headers)
 		}
 
-		if isLatest {
-			s.stopHistorySyncWatchdog(id)
-		} else {
-			historySyncProgress.Store(id, progress)
-			s.resetHistorySyncWatchdog(id)
+		// The watchdog tracks the bulk import only. An on-demand sync carries no
+		// meaningful progress, so letting it touch the watchdog would either
+		// abort a running import or keep one alive forever.
+		if !onDemand {
+			if isLatest {
+				s.stopHistorySyncWatchdog(id)
+			} else {
+				historySyncProgress.Store(id, progress)
+				s.resetHistorySyncWatchdog(id)
+			}
 		}
 	}
 
@@ -913,16 +1068,21 @@ func (s *Whatsmiau) parseWAMessage(m *waE2E.Message) (string, *WookMessageRaw, *
 	} else if video := m.GetVideoMessage(); video != nil {
 		messageType = "videoMessage"
 		raw.VideoMessage = &WookVideoMessageRaw{
-			Url:           video.GetURL(),
-			Mimetype:      video.GetMimetype(),
-			Caption:       video.GetCaption(),
-			FileSha256:    b64(video.GetFileSHA256()),
-			FileLength:    u64(video.GetFileLength()),
-			Seconds:       video.GetSeconds(),
-			MediaKey:      b64(video.GetMediaKey()),
-			FileEncSha256: b64(video.GetFileEncSHA256()),
-			JPEGThumbnail: b64(video.GetJPEGThumbnail()),
-			GIFPlayback:   video.GetGifPlayback(),
+			Url:               video.GetURL(),
+			Mimetype:          video.GetMimetype(),
+			Caption:           video.GetCaption(),
+			FileSha256:        b64(video.GetFileSHA256()),
+			FileLength:        u64(video.GetFileLength()),
+			Seconds:           video.GetSeconds(),
+			MediaKey:          b64(video.GetMediaKey()),
+			FileEncSha256:     b64(video.GetFileEncSHA256()),
+			DirectPath:        video.GetDirectPath(),
+			MediaKeyTimestamp: i64(video.GetMediaKeyTimestamp()),
+			JPEGThumbnail:     b64(video.GetJPEGThumbnail()),
+			GIFPlayback:       video.GetGifPlayback(),
+			ViewOnce:          video.GetViewOnce(),
+			Height:            int(video.GetHeight()),
+			Width:             int(video.GetWidth()),
 		}
 		ci = video.GetContextInfo()
 	} else if contact := m.GetContactMessage(); contact != nil {
@@ -1082,11 +1242,58 @@ func (s *Whatsmiau) parseWAMessage(m *waE2E.Message) (string, *WookMessageRaw, *
 				Participant: targetKey.GetParticipant(),
 			}
 		}
-	} else {
-		messageType = "unknown"
+	}
+
+	// Everything the branches above did not map is still forwarded verbatim via
+	// the protojson fallback, and the type is derived from the protobuf field
+	// name so consumers see e.g. "templateMessage" instead of "unknown".
+	raw.Fallback = buildRawFallback(m)
+	if messageType == "" {
+		messageType = firstContentKey(raw.Fallback)
+		if messageType == "" {
+			messageType = "unknown"
+		}
+	}
+
+	if ci == nil {
+		ci = contextInfoOf(m)
 	}
 
 	return messageType, raw, ci
+}
+
+// contextInfoOf digs the ContextInfo out of a message whose type parseWAMessage
+// does not map explicitly, so quoted messages, mentions and ad replies keep
+// working for those types too.
+func contextInfoOf(m *waE2E.Message) *waE2E.ContextInfo {
+	switch {
+	case m.GetTemplateMessage() != nil:
+		return m.GetTemplateMessage().GetContextInfo()
+	case m.GetTemplateButtonReplyMessage() != nil:
+		return m.GetTemplateButtonReplyMessage().GetContextInfo()
+	case m.GetButtonsMessage() != nil:
+		return m.GetButtonsMessage().GetContextInfo()
+	case m.GetListMessage() != nil:
+		return m.GetListMessage().GetContextInfo()
+	case m.GetInteractiveMessage() != nil:
+		return m.GetInteractiveMessage().GetContextInfo()
+	case m.GetInteractiveResponseMessage() != nil:
+		return m.GetInteractiveResponseMessage().GetContextInfo()
+	case m.GetOrderMessage() != nil:
+		return m.GetOrderMessage().GetContextInfo()
+	case m.GetProductMessage() != nil:
+		return m.GetProductMessage().GetContextInfo()
+	case m.GetGroupInviteMessage() != nil:
+		return m.GetGroupInviteMessage().GetContextInfo()
+	case m.GetEventMessage() != nil:
+		return m.GetEventMessage().GetContextInfo()
+	case m.GetPollCreationMessageV2() != nil:
+		return m.GetPollCreationMessageV2().GetContextInfo()
+	case m.GetRequestPhoneNumberMessage() != nil:
+		return m.GetRequestPhoneNumberMessage().GetContextInfo()
+	default:
+		return nil
+	}
 }
 
 func (s *Whatsmiau) convertContactHistorySync(id string, event []*waHistorySync.Pushname, conversations []*waHistorySync.Conversation) WookContactUpsertData {

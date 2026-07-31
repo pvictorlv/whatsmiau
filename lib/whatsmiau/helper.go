@@ -331,6 +331,13 @@ func canIgnoreGroup(evt interface{}, instance *models.Instance) bool {
 		}
 
 		jid = msg.Info.Chat.String()
+	case *events.UndecryptableMessage:
+		msg, ok := evt.(*events.UndecryptableMessage)
+		if !ok {
+			return false
+		}
+
+		jid = msg.Info.Chat.String()
 	case *events.GroupInfo:
 		gInfo, ok := evt.(*events.GroupInfo)
 		if !ok {
@@ -460,7 +467,24 @@ func buildBrazilianAlternate(number string) string {
 	}
 }
 
-func (s *Whatsmiau) buildMessageDataFromHistory(msg *waWeb.WebMessageInfo, convName, displayName string) *WookMessageData {
+// resolveHistoryJID turns a raw JID string from a history sync key into the
+// (jid, lid) pair used everywhere else. Unparseable or empty input is returned
+// untouched so a malformed key never drops the whole message.
+func (s *Whatsmiau) resolveHistoryJID(ctx context.Context, id, rawJID string) (string, string) {
+	if rawJID == "" {
+		return "", ""
+	}
+
+	parsed, err := types.ParseJID(rawJID)
+	if err != nil {
+		zap.L().Warn("failed to parse history sync jid", zap.String("jid", rawJID), zap.Error(err))
+		return rawJID, ""
+	}
+
+	return s.GetJidLid(ctx, id, parsed)
+}
+
+func (s *Whatsmiau) buildMessageDataFromHistory(ctx context.Context, id string, msg *waWeb.WebMessageInfo, convName, displayName string) *WookMessageData {
 	if msg == nil || msg.Message == nil {
 		return nil
 	}
@@ -475,12 +499,24 @@ func (s *Whatsmiau) buildMessageDataFromHistory(msg *waWeb.WebMessageInfo, convN
 		return nil
 	}
 
+	// Since the LID migration, history sync chats can be addressed by LID. Left
+	// unresolved they reach the consumer as a bare "<lid>@lid" and create a
+	// phantom contact, so resolve them the same way the live path does.
+	remoteJid, remoteLid := s.resolveHistoryJID(ctx, id, key.GetRemoteJID())
+	participant, _ := s.resolveHistoryJID(ctx, id, key.GetParticipant())
+
+	addressingMode := "lid"
+	if remoteLid == "" {
+		addressingMode = "jid"
+	}
+
 	wookKey := &WookKey{
-		RemoteJid:      key.GetRemoteJID(),
+		RemoteJid:      remoteJid,
+		RemoteLid:      remoteLid,
 		FromMe:         key.GetFromMe(),
 		Id:             key.GetID(),
-		Participant:    key.GetParticipant(),
-		AddressingMode: "jid",
+		Participant:    participant,
+		AddressingMode: addressingMode,
 	}
 
 	status := statusFromHistory(msg.GetStatus(), key.GetFromMe())
@@ -492,10 +528,8 @@ func (s *Whatsmiau) buildMessageDataFromHistory(msg *waWeb.WebMessageInfo, convN
 		}
 	} else if pushName == "" {
 
-		if jid := key.GetRemoteJID(); jid != "" {
-			if idx := strings.Index(jid, "@"); idx != -1 {
-				pushName = jid[:idx]
-			}
+		if idx := strings.Index(remoteJid, "@"); idx != -1 {
+			pushName = remoteJid[:idx]
 		}
 		if pushName == "" {
 			switch {

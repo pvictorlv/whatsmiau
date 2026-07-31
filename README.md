@@ -200,8 +200,35 @@ The application can send webhook events for the following actions:
 | `MESSAGES_UPSERT` | Triggered when a new message is received.           |
 | `MESSAGES_UPDATE` | Triggered when a message status changes (e.g., read). |
 | `MESSAGES_DELETE` | Triggered when a message is deleted for everyone.   |
+| `MESSAGES_SET` | Triggered with batches of history-sync messages, including on-demand recovery of a single lost message. |
+| `MESSAGES_UNDECRYPTABLE` | Triggered when a message arrived but could not be decrypted, after whatsmeow exhausted its retries. |
 | `CONTACTS_UPSERT` | Triggered when a contact is created or updated.     |
 | `CONNECTION_UPDATE` | Triggered when connection state changes (connected, disconnected, failed). |
+| `GROUP_PARTICIPANTS_UPDATE` | Triggered when participants join or leave a group. |
+| `QRCODE_UPDATED` | Triggered when a new QR code or pairing code is generated. |
+| `CALL` | Triggered when an incoming call is offered or terminated. |
+
+### Message payload shape
+
+`data.message` always carries the message in the Baileys/Evolution key spelling
+(`imageMessage`, `protocolMessage`, `key.id`, `key.remoteJid`, ...).
+
+Types with an explicit mapping are emitted first and enriched (`mediaUrl` and
+`base64` for media). Every remaining protobuf field is then appended verbatim
+from the WhatsApp protocol, so a message type this API does not model yet still
+reaches the consumer instead of being reported as `unknown`. Where a mapping is
+partial, the two are deep-merged and the mapped value wins.
+
+`data.messageType` is the name of the first content field, matching how Baileys
+consumers derive the type.
+
+### Lost messages
+
+A message that cannot be decrypted is reported through `MESSAGES_UNDECRYPTABLE`
+and always logged at error level, even when the instance is not subscribed to
+the event. whatsmeow additionally asks the phone to resend it; the resent
+message arrives later as an on-demand `MESSAGES_SET`, which is delivered
+regardless of the instance's `syncFullHistory` setting.
 
 
 ## Contributors

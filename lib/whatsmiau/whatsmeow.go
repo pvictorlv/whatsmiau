@@ -85,6 +85,7 @@ func LoadMiau(ctx context.Context, container *sqlstore.Container) {
 	clientLog := waLog.Stdout("Client", level, false)
 	for _, device := range deviceStore {
 		client := whatsmeow.NewClient(device, clientLog)
+		configureRecovery(client)
 		if client.Store.ID == nil {
 			zap.L().Error("device without id on db", zap.Any("device", device))
 			continue
@@ -260,6 +261,14 @@ func (s *Whatsmiau) ensurePairingCode(ctx context.Context, id string, client *wh
 	return code
 }
 
+// configureRecovery turns on whatsmeow's last-resort recovery for messages that
+// failed to decrypt: after the normal retry receipts are exhausted, the phone is
+// asked to resend the message, which comes back as an on-demand history sync.
+// Without this, an undecryptable message is simply lost.
+func configureRecovery(client *whatsmeow.Client) {
+	client.AutomaticMessageRerequestFromPhone = true
+}
+
 var devicePropsMu sync.Mutex
 
 func setHistorySyncPayload(client *whatsmeow.Client) {
@@ -299,6 +308,7 @@ func (s *Whatsmiau) generateClient(ctx context.Context, id string) (*whatsmeow.C
 		device := s.container.NewDevice()
 
 		client = whatsmeow.NewClient(device, s.logger)
+		configureRecovery(client)
 
 		if inst := s.getInstanceCached(id); inst != nil && inst.SyncFullHistory {
 			setHistorySyncPayload(client)
@@ -337,6 +347,7 @@ func (s *Whatsmiau) generateClient(ctx context.Context, id string) (*whatsmeow.C
 		device := s.container.NewDevice()
 
 		client = whatsmeow.NewClient(device, s.logger)
+		configureRecovery(client)
 
 		if inst := s.getInstanceCached(id); inst != nil && inst.SyncFullHistory {
 			setHistorySyncPayload(client)
@@ -622,6 +633,7 @@ func (s *Whatsmiau) Restart(ctx context.Context, id string) error {
 	}
 
 	client := whatsmeow.NewClient(device, s.logger)
+	configureRecovery(client)
 	configProxy(client, instance.InstanceProxy)
 	client.AddEventHandler(s.Handle(id))
 	s.clients.Store(id, client)

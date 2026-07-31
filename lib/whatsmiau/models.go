@@ -1,6 +1,7 @@
 package whatsmiau
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/emersion/go-vcard"
@@ -17,7 +18,37 @@ const (
 	WookMessagesSet             Wook = "messages.set"
 	WookGroupParticipantsUpdate Wook = "group-participants.update"
 	WookQRCodeUpdated           Wook = "qrcode.updated"
+	WookMessagesUndecryptable   Wook = "messages.undecryptable"
+	WookCallUpsert              Wook = "call.upsert"
 )
+
+// WookMessageUndecryptableData reports a message that arrived but could not be
+// decrypted (the classic "lost message"). whatsmeow already retried and, when
+// AutomaticMessageRerequestFromPhone is on, asked the phone to resend it — this
+// event exists so the loss is visible instead of silent.
+type WookMessageUndecryptableData struct {
+	Key              *WookKey `json:"key,omitempty"`
+	PushName         string   `json:"pushName,omitempty"`
+	IsUnavailable    bool     `json:"isUnavailable,omitempty"`
+	UnavailableType  string   `json:"unavailableType,omitempty"`
+	DecryptFailMode  string   `json:"decryptFailMode,omitempty"`
+	IsGroup          bool     `json:"isGroup,omitempty"`
+	MessageTimestamp int      `json:"messageTimestamp,omitempty"`
+	InstanceId       string   `json:"instanceId,omitempty"`
+}
+
+// WookCallData reports incoming call activity so consumers can react (reject,
+// auto-reply, log) instead of the call being invisible.
+type WookCallData struct {
+	Id         string `json:"id,omitempty"`
+	From       string `json:"from,omitempty"`
+	FromLid    string `json:"fromLid,omitempty"`
+	Status     string `json:"status,omitempty"`
+	IsVideo    bool   `json:"isVideo,omitempty"`
+	IsGroup    bool   `json:"isGroup,omitempty"`
+	Timestamp  int    `json:"timestamp,omitempty"`
+	InstanceId string `json:"instanceId,omitempty"`
+}
 
 type WookEvent[data any] struct {
 	Instance    string    `json:"instance,omitempty"`
@@ -118,6 +149,12 @@ type WookMessageRaw struct {
 	PtvMessage          *WookPtvMessageRaw          `json:"ptvMessage,omitempty"`
 	EncCommentMessage   *WookEncCommentMessageRaw   `json:"encCommentMessage,omitempty"`
 	MediaURL            string                      `json:"mediaUrl,omitempty"` // Sent when connect with some storage
+
+	// Fallback carries every protobuf field that has no explicit mapping above.
+	// It is merged in by MarshalJSON (see message_raw.go) so a message type we
+	// do not model yet still reaches the consumer verbatim, in its native
+	// protobuf shape, instead of being dropped as "unknown".
+	Fallback map[string]json.RawMessage `json:"-"`
 }
 
 type ContactsArrayMessageRaw struct {
@@ -222,16 +259,21 @@ type WookDocumentMessageRaw struct {
 }
 
 type WookVideoMessageRaw struct {
-	Url           string `json:"url,omitempty"`
-	Mimetype      string `json:"mimetype,omitempty"`
-	Caption       string `json:"caption,omitempty"`
-	FileSha256    string `json:"fileSha256,omitempty"`
-	FileLength    string `json:"fileLength,omitempty"`
-	Seconds       uint32 `json:"seconds,omitempty"`
-	MediaKey      string `json:"mediaKey,omitempty"`
-	FileEncSha256 string `json:"fileEncSha256,omitempty"`
-	JPEGThumbnail string `json:"jpegThumbnail,omitempty"`
-	GIFPlayback   bool   `json:"gifPlayback,omitempty"`
+	Url               string `json:"url,omitempty"`
+	Mimetype          string `json:"mimetype,omitempty"`
+	Caption           string `json:"caption,omitempty"`
+	FileSha256        string `json:"fileSha256,omitempty"`
+	FileLength        string `json:"fileLength,omitempty"`
+	Seconds           uint32 `json:"seconds,omitempty"`
+	MediaKey          string `json:"mediaKey,omitempty"`
+	FileEncSha256     string `json:"fileEncSha256,omitempty"`
+	DirectPath        string `json:"directPath,omitempty"`
+	MediaKeyTimestamp string `json:"mediaKeyTimestamp,omitempty"`
+	JPEGThumbnail     string `json:"jpegThumbnail,omitempty"`
+	GIFPlayback       bool   `json:"gifPlayback,omitempty"`
+	ViewOnce          bool   `json:"viewOnce,omitempty"`
+	Height            int    `json:"height,omitempty"`
+	Width             int    `json:"width,omitempty"`
 }
 
 type WookImageMessageRaw struct {
