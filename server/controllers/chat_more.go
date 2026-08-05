@@ -2,10 +2,12 @@ package controllers
 
 import (
 	"encoding/base64"
+	"errors"
 	"net/http"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
+	"github.com/verbeux-ai/whatsmiau/lib/whatsmiau"
 	"github.com/verbeux-ai/whatsmiau/server/dto"
 	"github.com/verbeux-ai/whatsmiau/utils"
 	"go.mau.fi/whatsmeow"
@@ -263,7 +265,21 @@ func (s *Chat) FetchMessageHistory(ctx echo.Context) error {
 	}
 
 	if err := s.whatsmiau.FetchMessageHistory(ctx.Request().Context(), request.InstanceID, *jid, request.Count, request.Timestamp, request.MessageId, request.FromMe); err != nil {
-		zap.L().Error("Whatsmiau.FetchMessageHistory failed", zap.Error(err))
+		// Quem pede histórico de uma instância sem sessão não cometeu um erro de
+		// servidor: aquela conexão simplesmente não está pareada aqui. Devolver
+		// 500 "client is nil" manda o consumidor caçar bug onde não há.
+		if errors.Is(err, whatsmeow.ErrClientIsNil) || errors.Is(err, whatsmiau.ErrDeviceNotConnected) {
+			zap.L().Warn("history sync requested for instance without an active session",
+				zap.String("instance", request.InstanceID),
+				zap.String("remoteJid", request.RemoteJid),
+				zap.Error(err))
+			return utils.HTTPFail(ctx, http.StatusConflict, err, "instance is not connected")
+		}
+
+		zap.L().Error("Whatsmiau.FetchMessageHistory failed",
+			zap.String("instance", request.InstanceID),
+			zap.String("remoteJid", request.RemoteJid),
+			zap.Error(err))
 		return utils.HTTPFail(ctx, http.StatusInternalServerError, err, "failed to request message history")
 	}
 

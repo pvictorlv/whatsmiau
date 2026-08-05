@@ -1,7 +1,7 @@
 package whatsmiau
 
 import (
-	"fmt"
+	"errors"
 	"time"
 
 	"go.mau.fi/whatsmeow"
@@ -145,6 +145,10 @@ func (s *Whatsmiau) FetchProfilePictureURL(ctx context.Context, instanceID strin
 	return pic.URL, nil
 }
 
+// ErrDeviceNotConnected sinaliza que a instância existe mas não tem sessão
+// pareada — condição do chamador, não falha de servidor.
+var ErrDeviceNotConnected = errors.New("device is not connected")
+
 // FetchMessageHistory dispara um pedido de sincronização de histórico sob demanda
 // ao WhatsApp. O resultado chega de forma assíncrona pelo evento HistorySync e é
 // entregue ao CRM via webhook messages.set (paridade com /chat/fetchMessageHistory).
@@ -154,7 +158,7 @@ func (s *Whatsmiau) FetchMessageHistory(ctx context.Context, instanceID string, 
 		return whatsmeow.ErrClientIsNil
 	}
 	if client.Store == nil || client.Store.ID == nil {
-		return fmt.Errorf("device is not connected")
+		return ErrDeviceNotConnected
 	}
 
 	if count <= 0 {
