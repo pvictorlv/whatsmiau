@@ -30,6 +30,22 @@ command -v pm2 >/dev/null 2>&1 || die "pm2 não encontrado no PATH"
 command -v sudo >/dev/null 2>&1 || die "sudo não encontrado"
 [ -x "$WM_DIR/whatsmiau" ] || die "binário $WM_DIR/whatsmiau ausente/não-executável (o deploy.py deve enviá-lo antes)"
 
+# --- 0. ffmpeg: obrigatório para áudio ---------------------------------------
+# O envio de áudio transcodifica o .ogg antes de subir (PTT opus). Sem ffmpeg o
+# whatsmiau responde 500 com "ffmpeg not found in path" e SÓ o áudio quebra —
+# texto e imagem seguem funcionando, o que despista o diagnóstico. A imagem
+# Docker já traz o ffmpeg; este deploy é binário puro, então instalamos aqui.
+if ! command -v ffmpeg >/dev/null 2>&1; then
+  log "ffmpeg ausente; instalando (necessário para envio de áudio)..."
+  if command -v apt-get >/dev/null 2>&1; then
+    DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg >/dev/null 2>&1 \
+      || log "AVISO: falha ao instalar ffmpeg — o envio de áudio vai falhar até instalar manualmente"
+  else
+    log "AVISO: apt-get não encontrado; instale o ffmpeg manualmente ou o áudio não funciona"
+  fi
+fi
+command -v ffmpeg >/dev/null 2>&1 && log "ffmpeg: $(command -v ffmpeg)"
+
 # --- 1. lê credenciais de Redis/Postgres do .env do Zapeada -------------------
 getenv() { grep -E "^$1=" "$ZAPEADA_ENV" 2>/dev/null | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"; }
 
