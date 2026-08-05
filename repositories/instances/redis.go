@@ -98,6 +98,14 @@ func (s *RedisInstance) Update(ctx context.Context, id string, toUpdate *models.
 		oldInstance.GroupsIgnore = toUpdate.GroupsIgnore
 	}
 
+	if toUpdate.SyncFullHistory != nil {
+		oldInstance.SyncFullHistory = toUpdate.SyncFullHistory
+	}
+
+	if toUpdate.SyncRecentHistory != nil {
+		oldInstance.SyncRecentHistory = toUpdate.SyncRecentHistory
+	}
+
 	if toUpdate.ProxyHost != "" {
 		oldInstance.InstanceProxy = toUpdate.InstanceProxy
 	}

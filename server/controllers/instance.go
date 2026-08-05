@@ -67,6 +67,13 @@ func (s *Instance) Create(ctx echo.Context) error {
 	}
 	request.RemoteJID = ""
 
+	// Grava o default explicitamente para a instância ficar auto-descritiva no
+	// /instance/fetchInstances, em vez de depender da leitura do ausente.
+	if request.SyncFullHistory == nil {
+		fullHistory := true
+		request.SyncFullHistory = &fullHistory
+	}
+
 	if len(request.ProxyHost) <= 0 && len(env.Env.ProxyAddresses) > 0 {
 		rd := rand.IntN(len(env.Env.ProxyAddresses))
 		proxyUrl := env.Env.ProxyAddresses[rd]
@@ -147,6 +154,9 @@ func (s *Instance) Update(ctx echo.Context) error {
 	}
 	if request.GroupsIgnore != nil {
 		toUpdate.GroupsIgnore = request.GroupsIgnore
+	}
+	if request.SyncFullHistory != nil {
+		toUpdate.SyncFullHistory = request.SyncFullHistory
 	}
 
 	instance, err := s.repo.Update(c, request.ID, toUpdate)

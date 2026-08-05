@@ -310,7 +310,7 @@ func (s *Whatsmiau) generateClient(ctx context.Context, id string) (*whatsmeow.C
 		client = whatsmeow.NewClient(device, s.logger)
 		configureRecovery(client)
 
-		if inst := s.getInstanceCached(id); inst != nil && inst.SyncFullHistory {
+		if inst := s.getInstanceCached(id); inst.FullHistoryEnabled() {
 			setHistorySyncPayload(client)
 		}
 
@@ -349,7 +349,7 @@ func (s *Whatsmiau) generateClient(ctx context.Context, id string) (*whatsmeow.C
 		client = whatsmeow.NewClient(device, s.logger)
 		configureRecovery(client)
 
-		if inst := s.getInstanceCached(id); inst != nil && inst.SyncFullHistory {
+		if inst := s.getInstanceCached(id); inst.FullHistoryEnabled() {
 			setHistorySyncPayload(client)
 		}
 		s.clients.Store(id, client) // replaces old client

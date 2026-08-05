@@ -43,7 +43,11 @@ type MigrationResult struct {
 type UpdateInstanceRequest struct {
 	ID           string `json:"id,omitempty" param:"id" validate:"required" swaggerignore:"true"`
 	GroupsIgnore *bool  `json:"groupsIgnore,omitempty"`
-	Webhook      struct {
+	// SyncFullHistory só era aceito no create. Uma instância criada sem ele
+	// ficava presa sem histórico para sempre — não havia rota para ligar o
+	// flag depois, e o handler de HistorySync descarta tudo quando ele é falso.
+	SyncFullHistory *bool `json:"syncFullHistory,omitempty"`
+	Webhook         struct {
 		Enabled *bool    `json:"enabled,omitempty"`
 		Base64  bool     `json:"base64,omitempty"`
 		URL     string   `json:"url,omitempty"`

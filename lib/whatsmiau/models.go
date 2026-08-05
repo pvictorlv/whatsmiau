@@ -61,6 +61,12 @@ type WookEvent[data any] struct {
 	Event       Wook      `json:"event,omitempty"`
 	IsLatest    *bool     `json:"isLatest,omitempty"`
 	Progress    *int      `json:"progress,omitempty"`
+	// SyncType distingue a origem de um messages.set: ON_DEMAND é a resposta a
+	// um pedido explícito (/chat/fetchMessageHistory ou recuperação de mensagem
+	// perdida), os demais são o import em massa do pareamento. O consumidor
+	// precisa dessa diferença: o import em massa respeita a data configurada
+	// pelo usuário, o on-demand tem que entregar exatamente o que foi pedido.
+	SyncType string `json:"syncType,omitempty"`
 }
 
 type WookMessageData struct {

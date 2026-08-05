@@ -8,11 +8,25 @@ type Instance struct {
 	AlwaysOnline      bool            `json:"alwaysOnline,omitempty"`
 	ReadMessages      bool            `json:"readMessages,omitempty"`
 	ReadStatus        bool            `json:"readStatus,omitempty"`
-	SyncFullHistory   bool            `json:"syncFullHistory,omitempty"`
-	SyncRecentHistory bool            `json:"syncRecentHistory,omitempty"`
+	SyncFullHistory   *bool           `json:"syncFullHistory,omitempty"`
+	SyncRecentHistory *bool           `json:"syncRecentHistory,omitempty"`
 	RemoteJID         string          `json:"remoteJID,omitempty"`
 	Webhook           InstanceWebhook `json:"webhook,omitempty"`
 	InstanceProxy
+}
+
+// FullHistoryEnabled diz se a instância deve pedir o histórico completo ao
+// parear e se os eventos de HistorySync devem ser entregues.
+//
+// Ausente conta como LIGADO. Histórico é o comportamento esperado de uma
+// conexão nova, e o campo só passou a ser gravado depois — as instâncias
+// criadas antes disso ficariam sem histórico para sempre. Só desliga quem
+// mandar `syncFullHistory: false` explicitamente.
+func (s *Instance) FullHistoryEnabled() bool {
+	if s == nil {
+		return false
+	}
+	return s.SyncFullHistory == nil || *s.SyncFullHistory
 }
 
 type InstanceProxy struct {

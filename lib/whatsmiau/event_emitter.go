@@ -658,6 +658,7 @@ func (s *Whatsmiau) handleHistorySyncEvent(id string, instance *models.Instance,
 				Event:    WookMessagesSet,
 				IsLatest: &isLatest,
 				Progress: &prog,
+				SyncType: e.Data.GetSyncType().String(),
 			}
 			s.emit(wookEvent, instance.Webhook.Url, instance.Webhook.Headers)
 		}
