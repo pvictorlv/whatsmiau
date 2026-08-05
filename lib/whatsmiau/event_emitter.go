@@ -628,7 +628,7 @@ func (s *Whatsmiau) handleHistorySyncEvent(id string, instance *models.Instance,
 	// of SyncFullHistory, which only governs the bulk import at pairing time.
 	onDemand := e.Data.GetSyncType() == waHistorySync.HistorySync_ON_DEMAND
 
-	if (instance.SyncFullHistory || onDemand) && eventMap["MESSAGES_SET"] {
+	if (instance.FullHistoryEnabled() || onDemand) && eventMap["MESSAGES_SET"] {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
 		defer cancel()
 
@@ -1598,14 +1598,34 @@ func (s *Whatsmiau) convertEventMessage(id string, instance *models.Instance, ev
 	}
 }
 
-func (s *Whatsmiau) convertEventReceipt(id string, evt *events.Receipt) []WookMessageUpdateData {
-	var status WookMessageUpdateStatus
+// receiptStatus traduz um receipt do whatsmeow no status do webhook. O segundo
+// retorno diz se o evento deve ser emitido.
+//
+// Receipts com IsFromMe são emitidos pela PRÓPRIA conta e falam das mensagens
+// que NÓS lemos — inclusive o "chat lido" que o WhatsApp gera no instante em que
+// enviamos algo. Propagá-los marcava a mensagem recém-enviada como LIDA em menos
+// de um segundo, sem o destinatário ter aberto nada. O ack de uma mensagem
+// enviada só pode mudar por receipt de quem a recebeu.
+func receiptStatus(evt *events.Receipt) (WookMessageUpdateStatus, bool) {
+	if evt.IsFromMe {
+		return "", false
+	}
+
 	switch evt.Type {
 	case types.ReceiptTypeRead:
-		status = MessageStatusRead
+		return MessageStatusRead, true
 	case types.ReceiptTypeDelivered:
-		status = MessageStatusDeliveryAck
+		return MessageStatusDeliveryAck, true
 	default:
+		// Inclui read-self (leitura nossa em outro device), sender (entrega aos
+		// nossos próprios dispositivos), retry, played e os de erro.
+		return "", false
+	}
+}
+
+func (s *Whatsmiau) convertEventReceipt(id string, evt *events.Receipt) []WookMessageUpdateData {
+	status, ok := receiptStatus(evt)
+	if !ok {
 		return nil
 	}
 
