@@ -103,18 +103,44 @@ func (s *Whatsmiau) resolveJID(ctx context.Context, client *whatsmeow.Client, ji
 		return jid
 	}
 
+	resolved := pickResolvedJID(jid, resp)
+	if resolved.User != jid.User {
+		zap.L().Debug("resolveJID: brazilian number resolved", zap.String("from", jid.User), zap.String("to", resolved.User))
+	}
+	return resolved
+}
+
+// pickResolvedJID escolhe o destino a partir de uma resposta de IsOnWhatsApp.
+//
+// Separada de resolveJID para ser testável sem rede — e porque a escolha tem uma
+// sutileza cara: `item.JID` é o ID CANÔNICO e, em contas com LID, vem como
+// `<id>@lid`. Copiar só o `.User` dele para dentro de um JID com Server
+// `s.whatsapp.net` produzia um híbrido inválido (`<lid>@s.whatsapp.net`), que o
+// whatsmeow depois tentava resolver como telefone no envio e falhava com
+// "no LID found for <lid>@s.whatsapp.net from server" — nenhuma mensagem saía.
+//
+// O telefone canônico é `item.PhoneNumber`. O LID quem resolve é o whatsmeow, a
+// partir do PN, na hora de enviar.
+func pickResolvedJID(original types.JID, resp []types.IsOnWhatsAppResponse) types.JID {
 	for _, item := range resp {
-		if item.IsIn {
-			resolved := jid
-			resolved.User = item.JID.User
-			if resolved.User != jid.User {
-				zap.L().Debug("resolveJID: brazilian number resolved", zap.String("from", jid.User), zap.String("to", resolved.User))
-			}
-			return resolved
+		if !item.IsIn {
+			continue
 		}
+
+		if !item.PhoneNumber.IsEmpty() && item.PhoneNumber.Server == types.DefaultUserServer {
+			return item.PhoneNumber.ToNonAD()
+		}
+
+		// Respostas antigas não trazem PhoneNumber: ali o próprio JID é o PN.
+		if item.JID.Server == types.DefaultUserServer {
+			return item.JID.ToNonAD()
+		}
+
+		// Só veio LID: mantém o número original e deixa o whatsmeow mapear.
+		return original
 	}
 
-	return jid
+	return original
 }
 
 type DeleteMessageForEveryoneRequest struct {
