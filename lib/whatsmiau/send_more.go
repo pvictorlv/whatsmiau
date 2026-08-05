@@ -424,7 +424,7 @@ func (s *Whatsmiau) buildAudioStatus(ctx context.Context, client *whatsmeow.Clie
 			Mimetype:      proto.String("audio/ogg; codecs=opus"),
 			FileSHA256:    uploaded.FileSHA256,
 			FileLength:    proto.Uint64(uploaded.FileLength),
-			Seconds:       proto.Uint32(uint32(secs)),
+			Seconds:       proto.Uint32(audioSeconds(secs)),
 			PTT:           proto.Bool(true),
 			MediaKey:      uploaded.MediaKey,
 			FileEncSHA256: uploaded.FileEncSHA256,

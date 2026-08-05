@@ -81,6 +81,15 @@ func (s *Whatsmiau) loadClientWithJID(ctx context.Context, instanceID string, ji
 	return client, resolved, nil
 }
 
+// waveformMaxAmplitude is the highest value a waveform byte may hold. WhatsApp reads
+// each byte as a percentage of the bar height, so anything above 100 is out of spec and
+// makes the client drop the waveform and fall back to a plain seek bar.
+const waveformMaxAmplitude = 100.0
+
+// audioSampleRate is the rate we decode to and encode at. WhatsApp voice notes are
+// mono 48kHz Opus; anything else risks the receiver refusing to play the note.
+const audioSampleRate = 48000
+
 // Returns audioConverted, waveform, duration and an error
 func convertAudio(data []byte, bars int) ([]byte, []byte, float64, error) {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
@@ -102,8 +111,9 @@ func convertAudio(data []byte, bars int) ([]byte, []byte, float64, error) {
 	out, err := exec.Command(
 		"ffmpeg",
 		"-i", tempIn.Name(),
+		"-vn",
 		"-ac", "1",
-		"-ar", "48000",
+		"-ar", strconv.Itoa(audioSampleRate),
 		"-f", "s16le",
 		"-hide_banner",
 		"-loglevel", "error",
@@ -116,13 +126,19 @@ func convertAudio(data []byte, bars int) ([]byte, []byte, float64, error) {
 		return nil, nil, 0, errors.New("no audio data after decoding")
 	}
 
-	// Also convert to Ogg/Opus for stable playback/sharing
+	// Also convert to Ogg/Opus for stable playback/sharing. Mono at 48kHz is what the
+	// WhatsApp recorder produces; a stereo or resampled note plays back as "something is
+	// wrong with the audio file" on Android.
 	oggOut, err := exec.Command(
 		"ffmpeg",
 		"-i", tempIn.Name(),
 		"-vn",
+		"-map_metadata", "-1",
 		"-c:a", "libopus",
 		"-b:a", "64k",
+		"-ac", "1",
+		"-ar", strconv.Itoa(audioSampleRate),
+		"-avoid_negative_ts", "make_zero",
 		"-f", "ogg",
 		"-hide_banner",
 		"-loglevel", "error",
@@ -135,15 +151,21 @@ func convertAudio(data []byte, bars int) ([]byte, []byte, float64, error) {
 		return nil, nil, 0, errors.New("no data after opus conversion")
 	}
 
-	const sampleRate = 48000.0
 	n := len(out) / 2
-	durationSec := float64(n) / sampleRate
+	durationSec := float64(n) / float64(audioSampleRate)
 
 	samples := make([]int16, n)
 	for i := 0; i < n; i++ {
 		samples[i] = int16(binary.LittleEndian.Uint16(out[2*i : 2*i+2]))
 	}
 
+	return oggOut, buildWaveform(samples, bars), durationSec, nil
+}
+
+// buildWaveform turns mono PCM into the byte-per-bar waveform WhatsApp renders under a
+// voice note. Values are normalised against the 98th percentile so a single spike does
+// not flatten the whole preview, then clamped into the 0..100 range the client expects.
+func buildWaveform(samples []int16, bars int) []byte {
 	values := rmsByBars(samples, bars)
 
 	scale := percentile(values, 0.98)
@@ -154,23 +176,33 @@ func convertAudio(data []byte, bars int) ([]byte, []byte, float64, error) {
 			}
 		}
 	}
-	if scale == 0 {
-		return oggOut, make([]byte, len(values)), durationSec, nil
+	if scale <= 0 {
+		return make([]byte, len(values))
 	}
 
 	buf := make([]byte, len(values))
 	for i, v := range values {
-		x := (v / scale) * 255.0
+		x := (v / scale) * waveformMaxAmplitude
 		if x < 0 {
 			x = 0
 		}
-		if x > 255 {
-			x = 255
+		if x > waveformMaxAmplitude {
+			x = waveformMaxAmplitude
 		}
 		buf[i] = byte(math.Round(x))
 	}
 
-	return oggOut, buf, durationSec, nil
+	return buf
+}
+
+// audioSeconds rounds a decoded duration to the value carried in AudioMessage.Seconds.
+// A voice note reported as 0s is treated as malformed by the client, so sub-second audio
+// is reported as 1s.
+func audioSeconds(duration float64) uint32 {
+	if duration <= 1 {
+		return 1
+	}
+	return uint32(math.Round(duration))
 }
 
 func rmsByBars(samples []int16, bars int) []float64 {
