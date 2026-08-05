@@ -35,20 +35,37 @@ por SFTP, e executa o [`bootstrap.sh`](bootstrap.sh) no servidor. É **idempoten
 - Isola o whatsmiau num **DB lógico próprio do Redis** compartilhado (`REDIS_DB`,
   default 5) — evita colisão com o BullMQ/cache do Zapeada.
 - Lê as credenciais de Redis/Postgres do `.env` do Zapeada automaticamente.
-- Gera e **persiste** `API_KEY` e a senha do DB (estáveis entre re-deploys).
+- Usa a **mesma `EVOLUTION_API_KEY` do Zapeada** como `API_KEY` do whatsmiau (veja
+  abaixo). Sem o `.env` do Zapeada, gera e persiste uma chave própria.
+- Persiste a senha do DB (estável entre re-deploys).
 - Registra o processo no PM2 (`pm2 save`) e faz um health check autenticado.
 
-Ao final imprime a URL interna, a API key e os valores de `.env` para plugar no
-Zapeada quando você decidir migrar aquele licenciado:
+### Por que a API key é a mesma do evolution
+
+O `EvolutionAPIClient` do Zapeada usa **um único par url/chave** para os dois
+providers — o whatsmiau é compatível com a API da Evolution. Se as chaves
+diferissem, migrar uma empresa exigiria trocar a credencial junto com o provider,
+e esquecer disso faz o Zapeada apresentar a chave do evolution ao whatsmiau: **401
+em tudo**, a instância nunca é criada e o QR nunca aparece — sem erro claro na
+tela, a conexão só fica em "tentando conexão...".
+
+Com as chaves alinhadas, migrar uma empresa é trocar **provider + URL**, e a chave
+continua valendo para os dois.
+
+### Configurar o Zapeada
+
+Uma vez por máquina, no `.env` (o webhook é o caminho de ingestão do whatsmiau):
 
 ```
-WHATSAPP_PROVIDER=whatsmiau
-EVOLUTION_API_URL=http://127.0.0.1:8085/v1
-EVOLUTION_API_KEY=<api key impressa>
-WHATSMIAU_WEBHOOK_URL=<url pública do backend>/whatsmiau/webhook
+WHATSMIAU_WEBHOOK_URL=http://127.0.0.1:8083/whatsmiau/webhook
 WHATSMIAU_WEBHOOK_SECRET=<segredo forte>
 # depois: pm2 restart api worker-heavy-1 worker-heavy-2 worker-light --update-env
 ```
+
+Depois, por empresa, em **Configurações → Integrações → WhatsApp Web**: escolha o
+provedor `whatsmiau` e aponte a URL para `http://127.0.0.1:8085/v1`. Para migrar a
+máquina inteira de uma vez, use `WHATSAPP_PROVIDER=whatsmiau` +
+`EVOLUTION_API_URL` no `.env` — empresas sem override herdam esse default.
 
 > A migração do Zapeada é um passo **separado e manual** — o deploy só instala o
 > whatsmiau, que fica ocioso até o Zapeada apontar para ele.

@@ -56,7 +56,25 @@ persist_secret() { # $1=arquivo  -> gera hex se não existir, ecoa o valor
   cat "$f"
 }
 WM_DB_PASS=$(persist_secret "$WM_DIR/.db_pass" 16)
-API_KEY=$(persist_secret "$WM_DIR/.api_key" 24)
+
+# A API key do whatsmiau é a MESMA EVOLUTION_API_KEY do Zapeada, de propósito.
+# O EvolutionAPIClient usa um único par url/chave para os dois providers, então
+# chaves distintas obrigariam a trocar a credencial junto com o provider — e
+# esquecer disso faz o Zapeada apresentar a chave do evolution ao whatsmiau, que
+# responde 401 em tudo (instância nunca criada, QR nunca aparece). Com a chave
+# alinhada, migrar uma empresa exige trocar só o provider e a URL.
+# Sem o .env do Zapeada, cai no segredo próprio gerado/persistido de sempre.
+ZAP_API_KEY=""
+[ -f "$ZAPEADA_ENV" ] && ZAP_API_KEY=$(getenv EVOLUTION_API_KEY)
+if [ -n "$ZAP_API_KEY" ]; then
+  printf '%s' "$ZAP_API_KEY" > "$WM_DIR/.api_key"
+  chmod 600 "$WM_DIR/.api_key"
+  API_KEY="$ZAP_API_KEY"
+  log "API key alinhada com a EVOLUTION_API_KEY do Zapeada"
+else
+  API_KEY=$(persist_secret "$WM_DIR/.api_key" 24)
+  log "AVISO: EVOLUTION_API_KEY não encontrada em $ZAPEADA_ENV; usando API key própria"
+fi
 
 # --- 3. Postgres: cria role + database (idempotente, via peer auth) -----------
 log "configurando Postgres (role/db '$WM_DB_NAME')..."
@@ -120,7 +138,11 @@ fi
 echo ""
 echo "==================== WHATSMIAU DEPLOY OK ===================="
 echo "URL base (interna):  http://127.0.0.1:$WM_PORT/v1"
-echo "API key:             $API_KEY"
+if [ -n "$ZAP_API_KEY" ]; then
+echo "API key:             a MESMA EVOLUTION_API_KEY do Zapeada (alinhada de propósito)"
+else
+echo "API key:             $API_KEY  (própria — EVOLUTION_API_KEY não encontrada)"
+fi
 echo "Redis DB lógico:     $WM_REDIS_DB"
 echo "Postgres db/role:    $WM_DB_NAME / $WM_DB_USER"
 echo ""
@@ -128,11 +150,19 @@ BACKEND_PORT=$(getenv PORT); BACKEND_PORT=${BACKEND_PORT:-8083}
 echo "PRÉ-REQUISITO: o backend do Zapeada nesta máquina precisa conter o código de"
 echo "integração (rota /whatsmiau/webhook + provider flag). Sem isso, NÃO faça o flip."
 echo ""
-echo "Para migrar o Zapeada para o whatsmiau (quando quiser), no $ZAPEADA_ENV:"
-echo "  WHATSAPP_PROVIDER=whatsmiau"
-echo "  EVOLUTION_API_URL=http://127.0.0.1:$WM_PORT/v1"
-echo "  EVOLUTION_API_KEY=$API_KEY"
+echo "Webhook (uma vez por máquina), no $ZAPEADA_ENV:"
 echo "  WHATSMIAU_WEBHOOK_URL=http://127.0.0.1:$BACKEND_PORT/whatsmiau/webhook"
 echo "  WHATSMIAU_WEBHOOK_SECRET=<gere um segredo forte>"
 echo "  # depois: pm2 restart api worker-heavy-1 worker-heavy-2 worker-light --update-env"
+echo ""
+echo "Migrar UMA empresa (Configurações > Integrações > WhatsApp Web):"
+echo "  Provedor   = whatsmiau"
+echo "  URL da API = http://127.0.0.1:$WM_PORT/v1"
+if [ -n "$ZAP_API_KEY" ]; then
+echo "  Chave      = não precisa mexer (é a mesma dos dois providers)"
+fi
+echo ""
+echo "Migrar a máquina INTEIRA (default global), no $ZAPEADA_ENV:"
+echo "  WHATSAPP_PROVIDER=whatsmiau"
+echo "  EVOLUTION_API_URL=http://127.0.0.1:$WM_PORT/v1"
 echo "============================================================"
