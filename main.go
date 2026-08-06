@@ -8,6 +8,7 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/verbeux-ai/whatsmiau/env"
 	log_connect "github.com/verbeux-ai/whatsmiau/lib/log-connect"
+	"github.com/verbeux-ai/whatsmiau/lib/proxypool"
 	"github.com/verbeux-ai/whatsmiau/lib/whatsmiau"
 	"github.com/verbeux-ai/whatsmiau/server/routes"
 	"github.com/verbeux-ai/whatsmiau/services"
@@ -41,6 +42,12 @@ func main() {
 	if err := log_connect.StartLogger(); err != nil {
 		log.Fatalln(err)
 	}
+
+	proxypool.Configure(
+		env.Env.ProxyPoolFile,
+		proxypool.Policy(env.Env.ProxyPoolRotation),
+		env.Env.ProxyPoolCooldown,
+	)
 
 	ctx, c := context.WithTimeout(context.Background(), 10*time.Second)
 	defer c()

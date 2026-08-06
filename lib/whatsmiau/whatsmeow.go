@@ -10,6 +10,7 @@ import (
 	"github.com/puzpuzpuz/xsync/v4"
 	"github.com/verbeux-ai/whatsmiau/env"
 	"github.com/verbeux-ai/whatsmiau/interfaces"
+	"github.com/verbeux-ai/whatsmiau/lib/proxypool"
 	"github.com/verbeux-ai/whatsmiau/lib/storage/gcs"
 	"github.com/verbeux-ai/whatsmiau/models"
 	"github.com/verbeux-ai/whatsmiau/repositories/instances"
@@ -93,9 +94,14 @@ func LoadMiau(ctx context.Context, container *sqlstore.Container) {
 
 		instanceFound, ok := instanceByRemoteJid[client.Store.ID.String()]
 		if ok {
-			configProxy(client, instanceFound.InstanceProxy)
 			clients.Store(instanceFound.ID, client)
+			if err := configProxy(client, instanceFound.ID, instanceFound.InstanceProxy); err != nil {
+				zap.L().Error("skipping connect: no proxy available",
+					zap.Error(err), zap.String("instance", instanceFound.ID))
+				continue
+			}
 			if err := client.Connect(); err != nil {
+				proxypool.MarkFailed(instanceFound.ID, err.Error())
 				jid := ""
 				if client.Store != nil && client.Store.ID != nil {
 					jid = client.Store.ID.String()
@@ -320,7 +326,9 @@ func (s *Whatsmiau) generateClient(ctx context.Context, id string) (*whatsmeow.C
 	// trying recover existent connection
 	if s.hasSomeDevice(client) {
 		if instanceFound := s.getInstanceCached(id); instanceFound != nil {
-			configProxy(client, instanceFound.InstanceProxy)
+			if err := configProxy(client, id, instanceFound.InstanceProxy); err != nil {
+				return nil, err
+			}
 		}
 
 		if client.IsLoggedIn() {
@@ -331,6 +339,7 @@ func (s *Whatsmiau) generateClient(ctx context.Context, id string) (*whatsmeow.C
 			if client.IsLoggedIn() {
 				return nil, nil
 			}
+			proxypool.MarkFailed(id, err.Error())
 			return nil, err
 		}
 
@@ -401,9 +410,13 @@ func (s *Whatsmiau) observeConnection(client *whatsmeow.Client, id string, phone
 	}
 
 	if instanceFound := s.getInstance(id); instanceFound != nil {
-		configProxy(client, instanceFound.InstanceProxy)
+		if err := configProxy(client, id, instanceFound.InstanceProxy); err != nil {
+			zap.L().Error("skipping connect: no proxy available", zap.Error(err), zap.String("id", id))
+			return
+		}
 	}
 	if err := client.Connect(); err != nil {
+		proxypool.MarkFailed(id, err.Error())
 		zap.L().Error("failed to connect connected device", zap.Error(err))
 		return
 	}
@@ -566,6 +579,7 @@ func (s *Whatsmiau) Logout(ctx context.Context, id string) error {
 	}
 
 	s.clients.Delete(id)
+	proxypool.Release(id)
 	return s.deleteDeviceIfExists(ctx, client)
 }
 
@@ -634,11 +648,15 @@ func (s *Whatsmiau) Restart(ctx context.Context, id string) error {
 
 	client := whatsmeow.NewClient(device, s.logger)
 	configureRecovery(client)
-	configProxy(client, instance.InstanceProxy)
+	if err := configProxy(client, id, instance.InstanceProxy); err != nil {
+		zap.L().Error("restart: no proxy available", zap.String("id", id), zap.Error(err))
+		return err
+	}
 	client.AddEventHandler(s.Handle(id))
 	s.clients.Store(id, client)
 
 	if err := client.Connect(); err != nil {
+		proxypool.MarkFailed(id, err.Error())
 		zap.L().Error("restart: connect failed", zap.String("id", id), zap.Error(err))
 		return err
 	}

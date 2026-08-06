@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/verbeux-ai/whatsmiau/env"
+	"github.com/verbeux-ai/whatsmiau/lib/proxypool"
 	"github.com/verbeux-ai/whatsmiau/models"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waWeb"
@@ -410,28 +411,46 @@ func canIgnoreGroup(evt interface{}, instance *models.Instance) bool {
 	return strings.HasSuffix(jid, "@g.us")
 }
 
-func configProxy(client *whatsmeow.Client, instanceProxy models.InstanceProxy) {
-	if len(instanceProxy.ProxyHost) <= 0 {
-		return
-	}
+// configProxy points the client at the proxy it must use before connecting:
+// the instance's own proxy when it has one, otherwise one taken from the
+// global pool (PROXY_POOL_FILE).
+//
+// It returns an error when a pool is configured but has no proxy to hand out.
+// Callers must then skip Connect: going direct would expose the server IP to
+// WhatsApp, which is the exact thing the pool exists to prevent.
+func configProxy(client *whatsmeow.Client, instanceID string, instanceProxy models.InstanceProxy) error {
+	proxy := instanceProxy
+	source := "instance"
 
-	var jid string
-	if client.Store != nil && client.Store.ID != nil {
-		jid = client.Store.ID.String()
+	if len(proxy.ProxyHost) <= 0 {
+		if !proxypool.Configured() {
+			return nil
+		}
+
+		picked, err := proxypool.Acquire(instanceID)
+		if err != nil {
+			return fmt.Errorf("no proxy available for instance %s: %w", instanceID, err)
+		}
+
+		proxy = picked
+		source = "pool"
 	}
 
 	opts := whatsmeow.SetProxyOptions{
 		NoMedia: env.Env.ProxyNoMedia,
 	}
 
-	proxyUrl := mountProxyUrl(instanceProxy)
-	if err := client.SetProxyAddress(proxyUrl, opts); err != nil {
-		zap.L().Error("failed to set proxy address", zap.Error(err), zap.Any("instanceProxy", instanceProxy), zap.Any("jid", jid))
+	if err := client.SetProxyAddress(proxypool.URL(proxy), opts); err != nil {
+		return fmt.Errorf("failed to set proxy %s:%s on instance %s: %w",
+			proxy.ProxyHost, proxy.ProxyPort, instanceID, err)
 	}
-}
 
-func mountProxyUrl(proxy models.InstanceProxy) string {
-	return fmt.Sprintf("%s://%s:%s@%s:%s", proxy.ProxyProtocol, proxy.ProxyUsername, proxy.ProxyPassword, proxy.ProxyHost, proxy.ProxyPort)
+	zap.L().Info("proxy configured",
+		zap.String("instance", instanceID),
+		zap.String("source", source),
+		zap.String("proxy", proxy.ProxyHost+":"+proxy.ProxyPort))
+
+	return nil
 }
 
 func buildVCard(fullName, wuid, phone, organization, email, urlValue string) string {

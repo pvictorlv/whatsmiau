@@ -2,3 +2,6 @@
 .env
 *.json
 *.db
+
+# Proxy pool (contains credentials; *.json is already covered above)
+/proxies.txt

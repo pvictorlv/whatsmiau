@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/skip2/go-qrcode"
 	"github.com/verbeux-ai/whatsmiau/env"
+	"github.com/verbeux-ai/whatsmiau/lib/proxypool"
 	"github.com/verbeux-ai/whatsmiau/models"
 	"github.com/verbeux-ai/whatsmiau/services"
 	"go.mau.fi/whatsmeow"
@@ -319,6 +320,7 @@ func (s *Whatsmiau) handleLoggedOut(id string) {
 	}
 
 	s.clients.Delete(id)
+	proxypool.Release(id)
 }
 func (s *Whatsmiau) handleMessageEvent(id string, instance *models.Instance, e *events.Message, eventMap map[string]bool) {
 	if e.Message != nil {

@@ -118,7 +118,43 @@ The application is configured using environment variables. The following variabl
 | `PROXY_ADDRESSES` | A comma-separated list of proxy addresses. Example: `SOCKS5://user:pass@host:port,HTTP://host:port` | `` |
 | `PROXY_STRATEGY` | The strategy to use when selecting a proxy from the list (`RANDOM`). | `RANDOM` |
 | `PROXY_NO_MEDIA` | If set to `true`, media will not be sent through the proxy. | `false` |
+| `PROXY_POOL_FILE` | Path to a file with the rotating proxy pool. See [Proxy pool](#proxy-pool). | `` |
+| `PROXY_POOL_ROTATION` | How a proxy is picked from the pool (`round_robin`, `random` or `sticky`). | `round_robin` |
+| `PROXY_POOL_COOLDOWN` | How long a proxy stays quarantined after a connection failure. | `5m` |
 | `MANAGER_URL` | The public URL for the manager dashboard. | `` |
+
+## Proxy pool
+
+Instead of configuring a proxy per instance, you can point `PROXY_POOL_FILE` at a
+file listing every proxy you own — typically one port per outbound IPv6 on a
+3proxy VPS — and let the API hand one out to each instance. The file format is
+the same one the Evolution API reads, so a single file can feed both.
+
+JSON (`.json` extension), either a plain array or wrapped in `proxies`:
+
+```json
+[
+  { "host": "186.194.48.234", "port": 30000, "protocol": "http", "username": "user", "password": "secret" },
+  { "host": "186.194.48.234", "port": 30001, "protocol": "http", "username": "user", "password": "secret" }
+]
+```
+
+Or one URL per line (any other extension), where `#` starts a comment and the
+scheme defaults to `http`:
+
+```
+http://user:secret@186.194.48.234:30000
+socks5://user:secret@[2804:abcd::1]:1080
+186.194.48.234:30001
+```
+
+How it behaves:
+
+- An instance that has its own proxy keeps it; the pool only serves instances without one.
+- Each instance keeps the proxy it was given across reconnects, so its exit IP stays stable.
+- A proxy that fails to connect is quarantined for `PROXY_POOL_COOLDOWN` and the instance moves to another one.
+- The file is re-read whenever it changes, so proxies can be added or removed without restarting.
+- If the pool is configured but empty (missing file, no valid entries), instances refuse to connect instead of falling back to a direct connection that would expose the server IP.
 
 ## Versioning
 

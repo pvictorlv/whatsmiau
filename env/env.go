@@ -1,6 +1,8 @@
 package env
 
 import (
+	"time"
+
 	"github.com/caarlos0/env/v11"
 	"github.com/joho/godotenv"
 )
@@ -34,6 +36,14 @@ type E struct {
 	ProxyAddresses []string `env:"PROXY_ADDRESSES" envDefault:""`      // random choices proxies ex: <SOCKS5|HTTP|HTTPS>://<username>:<password>@<host>:<port>
 	ProxyStrategy  string   `env:"PROXY_STRATEGY" envDefault:"RANDOM"` // todo: implement BALANCED
 	ProxyNoMedia   bool     `env:"PROXY_NO_MEDIA" envDefault:"false"`
+
+	// Rotating proxy pool read from a file (same format as the Evolution API):
+	// a JSON array/{"proxies": []} or one proxy URL per line. Instances without
+	// their own proxy take one from this pool, and the file is re-read whenever
+	// it changes, so proxies can be added or removed without a restart.
+	ProxyPoolFile     string        `env:"PROXY_POOL_FILE" envDefault:""`
+	ProxyPoolRotation string        `env:"PROXY_POOL_ROTATION" envDefault:"round_robin"` // round_robin | random | sticky
+	ProxyPoolCooldown time.Duration `env:"PROXY_POOL_COOLDOWN" envDefault:"5m"`          // quarantine applied to a proxy after a connection failure
 
 	ManagerURL string `env:"MANAGER_URL" envDefault:""`
 }
