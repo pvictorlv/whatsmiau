@@ -184,11 +184,16 @@ func (s *Whatsmiau) FetchMessageHistory(ctx context.Context, instanceID string, 
 // DownloadMediaWithPath baixa e descriptografa uma mídia a partir dos metadados
 // (directPath + chaves), reconstruindo o binário sem depender do protobuf
 // original. Usado pelo /chat/getBase64FromMediaMessage.
-func (s *Whatsmiau) DownloadMediaWithPath(ctx context.Context, instanceID, directPath string, encHash, fileHash, mediaKey []byte, mediaType whatsmeow.MediaType, mmsType string) ([]byte, error) {
+//
+// O CDN do WhatsApp descarta a mídia pouco depois de todos os destinatários
+// baixarem — cedo demais para um histórico importado dias depois. Quando o
+// target é informado, um 410/404/403 vira um pedido de reenvio ao aparelho em
+// vez de uma falha.
+func (s *Whatsmiau) DownloadMediaWithPath(ctx context.Context, instanceID, directPath string, encHash, fileHash, mediaKey []byte, mediaType whatsmeow.MediaType, mmsType string, target *MediaRetryTarget) ([]byte, error) {
 	client, ok := s.clients.Load(instanceID)
 	if !ok {
 		return nil, whatsmeow.ErrClientIsNil
 	}
 
-	return client.DownloadMediaWithPath(ctx, directPath, encHash, fileHash, mediaKey, mediaType, mmsType, true)
+	return s.downloadMediaWithRetry(ctx, instanceID, client, directPath, encHash, fileHash, mediaKey, mediaType, mmsType, true, target)
 }

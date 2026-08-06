@@ -49,9 +49,37 @@ type GetBase64Request struct {
 	Message      GetBase64Message `json:"message" validate:"required"`
 }
 
-// GetBase64Message captura os blocos de mídia possíveis (mesmos json tags que o
-// whatsmiau emite no webhook), com os metadados necessários para o download.
+// GetBase64Message aceita as duas formas com que a mídia chega. O CRM devolve a
+// mensagem do webhook inteira — `{key, message: {imageMessage: ...}}`, o formato
+// da Evolution —, então os blocos vêm aninhados sob `message`; a forma achatada
+// (blocos na raiz) segue aceita para chamadas diretas à API.
 type GetBase64Message struct {
+	Key     *GetBase64Key     `json:"key,omitempty"`
+	Message *GetBase64Content `json:"message,omitempty"`
+
+	GetBase64Content
+}
+
+// Content resolve o envelope: prefere o bloco aninhado e cai para o achatado.
+func (m *GetBase64Message) Content() *GetBase64Content {
+	if m.Message != nil {
+		return m.Message
+	}
+	return &m.GetBase64Content
+}
+
+// GetBase64Key identifica a mensagem. Sem ela não dá para pedir ao aparelho que
+// reenvie uma mídia que o CDN já descartou.
+type GetBase64Key struct {
+	Id          string `json:"id,omitempty"`
+	RemoteJid   string `json:"remoteJid,omitempty"`
+	FromMe      bool   `json:"fromMe,omitempty"`
+	Participant string `json:"participant,omitempty"`
+}
+
+// GetBase64Content captura os blocos de mídia possíveis (mesmos json tags que o
+// whatsmiau emite no webhook), com os metadados necessários para o download.
+type GetBase64Content struct {
 	ImageMessage    *MediaLocator `json:"imageMessage,omitempty"`
 	AudioMessage    *MediaLocator `json:"audioMessage,omitempty"`
 	VideoMessage    *MediaLocator `json:"videoMessage,omitempty"`

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -194,6 +195,16 @@ func (s *Whatsmiau) emit(body any, url string, headers map[string]string) {
 
 func (s *Whatsmiau) Handle(id string) whatsmeow.EventHandler {
 	return func(evt any) {
+		// A resposta do aparelho a um pedido de reenvio de mídia vai direto a
+		// quem a espera. Passar pelo semáforo a deixaria na fila atrás dos
+		// próprios downloads bloqueados, e o gate de webhook a descartaria —
+		// isto aqui não é um evento para o consumidor, é a outra ponta de uma
+		// chamada nossa.
+		if retry, ok := evt.(*events.MediaRetry); ok {
+			deliverMediaRetry(id, retry)
+			return
+		}
+
 		s.handlerSemaphore <- struct{}{}
 		go func() {
 			defer func() {
@@ -289,8 +300,6 @@ func (s *Whatsmiau) Handle(id string) whatsmeow.EventHandler {
 				zap.L().Info("offline sync completed",
 					zap.String("instance", id),
 					zap.Int("count", e.Count))
-			case *events.MediaRetryError:
-				zap.L().Warn("media retry error", zap.String("instance", id), zap.Int("code", e.Code))
 			default:
 				zap.L().Debug("unknown event", zap.String("type", fmt.Sprintf("%T", evt)), zap.Any("raw", evt))
 			}
@@ -1457,31 +1466,41 @@ func (s *Whatsmiau) convertEventMessage(id string, instance *models.Instance, ev
 		}
 	}
 
+	// Mídia recém-chegada quase sempre ainda está no CDN, mas o worker pode
+	// processar a mensagem bem depois dela (fila represada, restart). Aí o
+	// aparelho é a única fonte restante.
+	mediaRetry := &MediaRetryTarget{
+		MessageID: e.Info.ID,
+		Chat:      e.Info.Chat,
+		Sender:    e.Info.Sender,
+		FromMe:    e.Info.IsFromMe,
+	}
+
 	// Upload media (URL / Base64) when needed
 	switch messageType {
 	case "imageMessage":
 		if img := m.GetImageMessage(); img != nil {
-			raw.MediaURL, raw.Base64 = s.uploadMessageFile(ctx, instance, client, img, img.GetMimetype(), "")
+			raw.MediaURL, raw.Base64 = s.uploadMessageFile(ctx, id, instance, client, img, img.GetMimetype(), "", mediaRetry)
 		}
 	case "audioMessage":
 		if aud := m.GetAudioMessage(); aud != nil {
-			raw.MediaURL, raw.Base64 = s.uploadMessageFile(ctx, instance, client, aud, aud.GetMimetype(), "")
+			raw.MediaURL, raw.Base64 = s.uploadMessageFile(ctx, id, instance, client, aud, aud.GetMimetype(), "", mediaRetry)
 		}
 	case "documentMessage":
 		if doc := m.GetDocumentMessage(); doc != nil {
-			raw.MediaURL, raw.Base64 = s.uploadMessageFile(ctx, instance, client, doc, doc.GetMimetype(), doc.GetFileName())
+			raw.MediaURL, raw.Base64 = s.uploadMessageFile(ctx, id, instance, client, doc, doc.GetMimetype(), doc.GetFileName(), mediaRetry)
 		}
 	case "videoMessage":
 		if vid := m.GetVideoMessage(); vid != nil {
-			raw.MediaURL, raw.Base64 = s.uploadMessageFile(ctx, instance, client, vid, vid.GetMimetype(), "")
+			raw.MediaURL, raw.Base64 = s.uploadMessageFile(ctx, id, instance, client, vid, vid.GetMimetype(), "", mediaRetry)
 		}
 	case "stickerMessage":
 		if st := m.GetStickerMessage(); st != nil {
-			raw.MediaURL, raw.Base64 = s.uploadMessageFile(ctx, instance, client, st, st.GetMimetype(), "")
+			raw.MediaURL, raw.Base64 = s.uploadMessageFile(ctx, id, instance, client, st, st.GetMimetype(), "", mediaRetry)
 		}
 	case "ptvMessage":
 		if ptv := m.GetPtvMessage(); ptv != nil {
-			raw.MediaURL, raw.Base64 = s.uploadMessageFile(ctx, instance, client, ptv, ptv.GetMimetype(), "")
+			raw.MediaURL, raw.Base64 = s.uploadMessageFile(ctx, id, instance, client, ptv, ptv.GetMimetype(), "", mediaRetry)
 		}
 	}
 
@@ -1650,7 +1669,7 @@ func (s *Whatsmiau) convertEventReceipt(id string, evt *events.Receipt) []WookMe
 	return result
 }
 
-func (s *Whatsmiau) uploadMessageFile(ctx context.Context, instance *models.Instance, client *whatsmeow.Client, fileMessage whatsmeow.DownloadableMessage, mimetype, fileName string) (string, string) {
+func (s *Whatsmiau) uploadMessageFile(ctx context.Context, instanceID string, instance *models.Instance, client *whatsmeow.Client, fileMessage whatsmeow.DownloadableMessage, mimetype, fileName string, mediaRetry *MediaRetryTarget) (string, string) {
 	var (
 		b64Result string
 		urlResult string
@@ -1663,8 +1682,12 @@ func (s *Whatsmiau) uploadMessageFile(ctx context.Context, instance *models.Inst
 	}
 
 	defer os.Remove(tmpFile.Name())
-	if err := client.DownloadToFile(ctx, fileMessage, tmpFile); err != nil {
-		zap.L().Error("failed to download image", zap.Error(err))
+	if err := s.downloadToFileWithRetry(ctx, instanceID, client, fileMessage, tmpFile, mediaRetry); err != nil {
+		zap.L().Error("failed to download media",
+			zap.String("instance", instanceID),
+			zap.String("mimetype", mimetype),
+			zap.Bool("gone", errors.Is(err, ErrMediaGone)),
+			zap.Error(err))
 		return "", ""
 	}
 

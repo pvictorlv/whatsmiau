@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
@@ -11,6 +12,7 @@ import (
 	"github.com/verbeux-ai/whatsmiau/server/dto"
 	"github.com/verbeux-ai/whatsmiau/utils"
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/types"
 	"go.uber.org/zap"
 )
 
@@ -182,7 +184,7 @@ func (s *Chat) GetBase64FromMediaMessage(ctx echo.Context) error {
 		return utils.HTTPFail(ctx, http.StatusBadRequest, err, "invalid request body")
 	}
 
-	locator, mediaType, mimetype := selectMediaLocator(&request.Message)
+	locator, mediaType, mimetype := selectMediaLocator(request.Message.Content())
 	if locator == nil {
 		return utils.HTTPFail(ctx, http.StatusBadRequest, nil, "no downloadable media found in message")
 	}
@@ -200,8 +202,27 @@ func (s *Chat) GetBase64FromMediaMessage(ctx echo.Context) error {
 		return utils.HTTPFail(ctx, http.StatusBadRequest, err, "invalid fileSha256")
 	}
 
-	data, err := s.whatsmiau.DownloadMediaWithPath(ctx.Request().Context(), request.InstanceID, locator.DirectPath, encHash, fileHash, mediaKey, mediaType, "")
+	data, err := s.whatsmiau.DownloadMediaWithPath(
+		ctx.Request().Context(),
+		request.InstanceID,
+		locator.DirectPath,
+		encHash,
+		fileHash,
+		mediaKey,
+		mediaType,
+		"",
+		mediaRetryTarget(request.Message.Key),
+	)
 	if err != nil {
+		// Mídia sumida do CDN e do aparelho não é falha de servidor: é o fim da
+		// linha. Devolver 500 manda o CRM tentar de novo para sempre.
+		if errors.Is(err, whatsmiau.ErrMediaGone) {
+			zap.L().Warn("media is gone from both the CDN and the phone",
+				zap.String("instance", request.InstanceID),
+				zap.Error(err))
+			return utils.HTTPFail(ctx, http.StatusGone, err, "media is no longer available")
+		}
+
 		zap.L().Error("Whatsmiau.DownloadMediaWithPath failed", zap.Error(err))
 		return utils.HTTPFail(ctx, http.StatusInternalServerError, err, "failed to download media")
 	}
@@ -212,9 +233,42 @@ func (s *Chat) GetBase64FromMediaMessage(ctx echo.Context) error {
 	})
 }
 
+// mediaRetryTarget traduz a chave da mensagem no alvo do pedido de reenvio.
+// Sem chave utilizável o download fica limitado ao que o CDN ainda tiver.
+func mediaRetryTarget(key *dto.GetBase64Key) *whatsmiau.MediaRetryTarget {
+	// types.ParseJID aceita qualquer string sem "@" como usuário no servidor
+	// padrão, então um lixo qualquer viraria um JID plausível. O webhook sempre
+	// emite o JID completo; exigir o "@" é o filtro honesto.
+	if key == nil || key.Id == "" || !strings.Contains(key.RemoteJid, "@") {
+		return nil
+	}
+
+	chat, err := types.ParseJID(key.RemoteJid)
+	if err != nil {
+		zap.L().Warn("unparseable remoteJid in media retry key",
+			zap.String("remoteJid", key.RemoteJid),
+			zap.Error(err))
+		return nil
+	}
+
+	target := &whatsmiau.MediaRetryTarget{
+		MessageID: key.Id,
+		Chat:      chat,
+		FromMe:    key.FromMe,
+	}
+
+	if key.Participant != "" {
+		if sender, err := types.ParseJID(key.Participant); err == nil {
+			target.Sender = sender
+		}
+	}
+
+	return target
+}
+
 // selectMediaLocator escolhe o bloco de mídia presente e resolve o MediaType do
 // whatsmeow correspondente para o download.
-func selectMediaLocator(m *dto.GetBase64Message) (*dto.MediaLocator, whatsmeow.MediaType, string) {
+func selectMediaLocator(m *dto.GetBase64Content) (*dto.MediaLocator, whatsmeow.MediaType, string) {
 	switch {
 	case m.ImageMessage != nil:
 		return m.ImageMessage, whatsmeow.MediaImage, m.ImageMessage.Mimetype
