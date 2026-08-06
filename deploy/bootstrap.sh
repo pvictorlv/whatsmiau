@@ -113,6 +113,19 @@ else
 fi
 
 # --- 4. escreve o .env do whatsmiau ------------------------------------------
+# O .env é reescrito inteiro a cada deploy, então a configuração de proxy que o
+# operador ajustou na máquina precisa ser relida daqui e reemitida — do
+# contrário o re-deploy tiraria as instâncias de trás do proxy sem avisar.
+# Variável de ambiente passada ao bootstrap tem precedência sobre o que está lá.
+keep_env() { # $1=chave -> ecoa o valor atual do .env do whatsmiau (ou vazio)
+  [ -f "$WM_DIR/.env" ] || return 0
+  sed -n "s/^$1=//p" "$WM_DIR/.env" | head -1
+}
+PROXY_POOL_FILE=${PROXY_POOL_FILE:-$(keep_env PROXY_POOL_FILE)}
+PROXY_POOL_ROTATION=${PROXY_POOL_ROTATION:-$(keep_env PROXY_POOL_ROTATION)}
+PROXY_POOL_COOLDOWN=${PROXY_POOL_COOLDOWN:-$(keep_env PROXY_POOL_COOLDOWN)}
+PROXY_NO_MEDIA=${PROXY_NO_MEDIA:-$(keep_env PROXY_NO_MEDIA)}
+
 umask 077
 cat > "$WM_DIR/.env" <<ENV
 PORT=$WM_PORT
@@ -125,6 +138,19 @@ DIALECT_DB=postgres
 DB_URL=postgres://$WM_DB_USER:$WM_DB_PASS@$PG_HOST:$PG_PORT/$WM_DB_NAME?sslmode=disable
 GCS_ENABLED=false
 ENV
+if [ -n "$PROXY_POOL_FILE" ]; then
+  echo "PROXY_POOL_FILE=$PROXY_POOL_FILE" >> "$WM_DIR/.env"
+  log "pool de proxies preservado: $PROXY_POOL_FILE"
+fi
+if [ -n "$PROXY_POOL_ROTATION" ]; then
+  echo "PROXY_POOL_ROTATION=$PROXY_POOL_ROTATION" >> "$WM_DIR/.env"
+fi
+if [ -n "$PROXY_POOL_COOLDOWN" ]; then
+  echo "PROXY_POOL_COOLDOWN=$PROXY_POOL_COOLDOWN" >> "$WM_DIR/.env"
+fi
+if [ -n "$PROXY_NO_MEDIA" ]; then
+  echo "PROXY_NO_MEDIA=$PROXY_NO_MEDIA" >> "$WM_DIR/.env"
+fi
 chmod 600 "$WM_DIR/.env"
 chmod +x "$WM_DIR/whatsmiau"
 

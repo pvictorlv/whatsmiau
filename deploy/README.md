@@ -38,7 +38,30 @@ por SFTP, e executa o [`bootstrap.sh`](bootstrap.sh) no servidor. É **idempoten
 - Usa a **mesma `EVOLUTION_API_KEY` do Zapeada** como `API_KEY` do whatsmiau (veja
   abaixo). Sem o `.env` do Zapeada, gera e persiste uma chave própria.
 - Persiste a senha do DB (estável entre re-deploys).
+- Preserva a configuração de proxy da máquina (`PROXY_POOL_FILE`,
+  `PROXY_POOL_ROTATION`, `PROXY_POOL_COOLDOWN`, `PROXY_NO_MEDIA`): o `.env` é
+  reescrito inteiro a cada deploy, então essas chaves são relidas do `.env`
+  atual e reemitidas. Sem isso, um re-deploy tiraria as instâncias de trás do
+  proxy sem avisar. Para mudar no deploy, exporte a variável antes do
+  `bootstrap.sh` — ela vence o que está no arquivo.
 - Registra o processo no PM2 (`pm2 save`) e faz um health check autenticado.
+
+### Ligar o pool de proxies numa máquina
+
+```bash
+cp /caminho/proxies.json /home/whatsmiau/proxies.json   # formato igual ao da evolution
+chmod 600 /home/whatsmiau/proxies.json
+cat >> /home/whatsmiau/.env <<'EOF'
+PROXY_POOL_FILE=/home/whatsmiau/proxies.json
+PROXY_POOL_ROTATION=round_robin
+PROXY_POOL_COOLDOWN=5m
+EOF
+pm2 restart whatsmiau --update-env
+```
+
+Confirme no log: `proxy pool loaded` com o `size` esperado e um
+`proxy configured ... source=pool` por instância. Lembre que o pool é
+**fail-closed**: com o arquivo ausente ou vazio, as instâncias não conectam.
 
 ### Por que a API key é a mesma do evolution
 
