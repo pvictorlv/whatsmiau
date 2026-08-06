@@ -320,9 +320,8 @@ func (s *Chat) FetchMessageHistory(ctx echo.Context) error {
 
 	if err := s.whatsmiau.FetchMessageHistory(ctx.Request().Context(), request.InstanceID, *jid, request.Count, request.Timestamp, request.MessageId, request.FromMe); err != nil {
 		// Quem pede histórico de uma instância sem sessão não cometeu um erro de
-		// servidor: aquela conexão simplesmente não está pareada aqui. Devolver
-		// 500 "client is nil" manda o consumidor caçar bug onde não há.
-		if errors.Is(err, whatsmeow.ErrClientIsNil) || errors.Is(err, whatsmiau.ErrDeviceNotConnected) {
+		// servidor: aquela conexão simplesmente não está pareada aqui.
+		if isInstanceNotConnected(err) {
 			zap.L().Warn("history sync requested for instance without an active session",
 				zap.String("instance", request.InstanceID),
 				zap.String("remoteJid", request.RemoteJid),

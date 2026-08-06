@@ -1,13 +1,26 @@
 package controllers
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/verbeux-ai/whatsmiau/lib/proxypool"
+	"github.com/verbeux-ai/whatsmiau/lib/whatsmiau"
 	"github.com/verbeux-ai/whatsmiau/models"
+	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
 )
+
+// isInstanceNotConnected reports whether err means "this instance has no live
+// session here" instead of a real failure. Every lib/whatsmiau call starts with
+// a lookup in the clients map and returns whatsmeow.ErrClientIsNil when the
+// instance was never paired (or was logged out) on this node — a client-state
+// condition, not a server bug. Answering 500 "client is nil" sends the consumer
+// hunting for a bug where there is none.
+func isInstanceNotConnected(err error) bool {
+	return errors.Is(err, whatsmeow.ErrClientIsNil) || errors.Is(err, whatsmiau.ErrDeviceNotConnected)
+}
 
 func numberToJid(number string) (*types.JID, error) {
 	splitNumber := strings.Split(number, "@")

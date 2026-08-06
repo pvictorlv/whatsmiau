@@ -12,17 +12,26 @@ PM2 + Postgres + Redis (sem Docker), sem tocar no evolution nem no Zapeada.
    e tenha o **Go** instalado (para compilar o binário Linux) — ou aponte
    `PREBUILT_BINARY` para um binário `linux/amd64` já pronto.
 
-2. Edite o bloco `CONFIG` no topo de [`deploy.py`](deploy.py):
+2. Configure o alvo — por variável de ambiente (preferido, não deixa senha em
+   arquivo versionado):
+   ```bash
+   WM_HOST=216.152.144.82 WM_PASSWORD=... python deploy.py
+   ```
+   ou editando o bloco `CONFIG` no topo de [`deploy.py`](deploy.py):
    ```python
    HOST = "216.152.144.82"
    USER = "root"
    PASSWORD = "..."
    WM_PORT = 8085          # NÃO use 8080 (evolution)
    ```
+   O ambiente vence o arquivo. As demais chaves do bloco (`WM_PORT`,
+   `WM_REDIS_DB`, `WM_DIR`, `ZAPEADA_ENV`, `PREBUILT_BINARY`) aceitam o mesmo
+   tratamento — útil para deployar em várias máquinas sem editar o script.
 
-3. Rode:
-   ```
-   python deploy.py
+3. Para a segunda máquina em diante, reaproveite o binário já compilado:
+   ```bash
+   WM_HOST=177.70.11.251 WM_PASSWORD=... \
+     PREBUILT_BINARY=deploy/whatsmiau-linux-amd64 python deploy.py
    ```
 
 O script compila o binário estático (`CGO_ENABLED=0`, dialeto Postgres), envia
@@ -62,6 +71,26 @@ pm2 restart whatsmiau --update-env
 Confirme no log: `proxy pool loaded` com o `size` esperado e um
 `proxy configured ... source=pool` por instância. Lembre que o pool é
 **fail-closed**: com o arquivo ausente ou vazio, as instâncias não conectam.
+
+#### Testar um proxy do pool: use um alvo IPv6
+
+As saídas do VPS 3proxy são **IPv6**. Um teste contra um alvo só-IPv4 volta
+`HTTP/1.0 502 Bad Gateway` e parece um pool quebrado — não é:
+
+```bash
+PX="http://evo:<senha>@186.194.48.234:30000"
+curl -x "$PX" https://ipv6.icanhazip.com   # OK -> imprime o IPv6 de saída
+curl -x "$PX" https://api.ipify.org        # 502 -> só-IPv4, não prova nada
+```
+
+O que interessa é o destino real: `g.whatsapp.net`, `web.whatsapp.com` e
+`mmg.whatsapp.net` têm registro AAAA, então o túnel funciona. Teste o
+`CONNECT`, não um GET — o `g.whatsapp.net` não responde a HTTP simples e
+devolve `000` mesmo com o túnel de pé:
+
+```bash
+curl -sv -x "$PX" https://g.whatsapp.net 2>&1 | grep -i "Connection established"
+```
 
 ### Por que a API key é a mesma do evolution
 

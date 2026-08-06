@@ -21,18 +21,30 @@ import sys
 import subprocess
 from pathlib import Path
 
+# O bootstrap imprime UTF-8 (✓, ⚠, acentos) e o console do Windows abre em
+# cp1252: sem isto, o primeiro caractere fora da tabela mata o deploy com
+# UnicodeEncodeError no meio do stream — depois do pm2 restart, deixando o
+# operador sem saber se o deploy terminou.
+for _stream_out in (sys.stdout, sys.stderr):
+    if hasattr(_stream_out, "reconfigure"):
+        _stream_out.reconfigure(encoding="utf-8", errors="replace")
+
 # ============================ CONFIG — edite aqui ============================
-HOST = "SEU_IP_AQUI"          # ex: 216.152.144.82
-USER = "root"
-PASSWORD = "SUA_SENHA_AQUI"
-SSH_PORT = 22
+# Cada valor também aceita variável de ambiente de mesmo nome, que vence o que
+# está escrito aqui. Preferir o ambiente para HOST/PASSWORD mantém credencial de
+# servidor fora de arquivo versionado e permite rodar o script para várias
+# máquinas sem editá-lo entre um deploy e outro.
+HOST = os.environ.get("WM_HOST", "SEU_IP_AQUI")          # ex: 216.152.144.82
+USER = os.environ.get("WM_USER", "root")
+PASSWORD = os.environ.get("WM_PASSWORD", "SUA_SENHA_AQUI")
+SSH_PORT = int(os.environ.get("WM_SSH_PORT", "22"))
 
-WM_PORT = 8085                # porta HTTP do whatsmiau (NÃO use 8080 = evolution)
-WM_REDIS_DB = 5               # DB lógico isolado no Redis compartilhado
-WM_DIR = "/home/whatsmiau"    # diretório de instalação no servidor
-ZAPEADA_ENV = "/home/deploy/backend/.env"  # de onde ler creds Redis/Postgres
+WM_PORT = int(os.environ.get("WM_PORT", "8085"))   # porta HTTP (NÃO use 8080 = evolution)
+WM_REDIS_DB = int(os.environ.get("WM_REDIS_DB", "5"))  # DB lógico isolado no Redis compartilhado
+WM_DIR = os.environ.get("WM_DIR", "/home/whatsmiau")   # diretório de instalação no servidor
+ZAPEADA_ENV = os.environ.get("ZAPEADA_ENV", "/home/deploy/backend/.env")  # creds Redis/Postgres
 
-PREBUILT_BINARY = ""          # opcional: caminho de um binário linux/amd64 pronto
+PREBUILT_BINARY = os.environ.get("PREBUILT_BINARY", "")  # opcional: binário linux/amd64 pronto
                               # (se vazio, o script compila do repositório com Go)
 # ===========================================================================
 

@@ -158,6 +158,7 @@ func (s *Chat) SendChatPresence(ctx echo.Context) error {
 // @Param        body      body      dto.NumberExistsRequest    true  "Numbers to check"
 // @Success      200       {array}   object                    "List of number existence results"
 // @Failure      400       {object}  utils.HTTPErrorResponse
+// @Failure      409       {object}  utils.HTTPErrorResponse  "Instance is not connected"
 // @Failure      422       {object}  utils.HTTPErrorResponse
 // @Failure      500       {object}  utils.HTTPErrorResponse
 // @Router       /chat/whatsappNumbers/{instance} [post]
@@ -181,7 +182,16 @@ func (s *Chat) NumberExists(ctx echo.Context) error {
 		Numbers:    request.Numbers,
 	})
 	if err != nil {
-		zap.L().Error("Whatsmiau.NumberExists failed", zap.Error(err))
+		if isInstanceNotConnected(err) {
+			zap.L().Warn("number check requested for instance without an active session",
+				zap.String("instance", instanceID),
+				zap.Error(err))
+			return utils.HTTPFail(ctx, http.StatusConflict, err, "instance is not connected")
+		}
+
+		zap.L().Error("Whatsmiau.NumberExists failed",
+			zap.String("instance", instanceID),
+			zap.Error(err))
 		return utils.HTTPFail(ctx, http.StatusInternalServerError, err, "failed to check numbers")
 	}
 
