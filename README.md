@@ -122,6 +122,31 @@ The application is configured using environment variables. The following variabl
 | `PROXY_POOL_ROTATION` | How a proxy is picked from the pool (`round_robin`, `random` or `sticky`). | `round_robin` |
 | `PROXY_POOL_COOLDOWN` | How long a proxy stays quarantined after a connection failure. | `5m` |
 | `MANAGER_URL` | The public URL for the manager dashboard. | `` |
+| `MEDIA_TRANSFER_TIMEOUT` | Ceiling for a single media transfer (download the source, upload it to WhatsApp). See [Large media](#large-media). | `10m` |
+| `MEDIA_EVENT_TIMEOUT` | Budget to convert an incoming message, including downloading its attachment and pushing it to storage. | `10m` |
+| `WEBHOOK_TIMEOUT` | Ceiling for one webhook delivery attempt. | `60s` |
+| `WEBHOOK_BASE64_MAX_BYTES` | Largest attachment embedded as base64 in the webhook payload. `0` disables the cut. | `25165824` (24 MiB) |
+
+## Large media
+
+Media never passes through memory as a whole: sends stream the source file to
+disk and upload it from there, and receives stream the attachment from the CDN
+to disk before it goes to storage. That is what keeps an 80 MB document from
+turning into hundreds of megabytes of RAM during encryption.
+
+Two knobs matter when files get big:
+
+- `MEDIA_TRANSFER_TIMEOUT` and `MEDIA_EVENT_TIMEOUT` are ceilings, not waits.
+  They exist so a stalled peer cannot hang a transfer forever; a healthy
+  transfer finishes long before them. Raise them if you serve very large files
+  over slow links.
+- `WEBHOOK_BASE64_MAX_BYTES` bounds what rides inline in the webhook. Base64
+  inflates a file by a third, so an 80 MB attachment would become a ~107 MB JSON
+  body — past that point delivery is slower than the on-demand fetch it
+  replaces, and it usually trips the consumer's own body limit. Attachments over
+  the cap are delivered without `base64`; the consumer fetches them from the
+  storage URL, or from `/chat/getBase64FromMediaMessage` when no storage is
+  configured. Enabling `GCS_ENABLED` avoids that second round trip entirely.
 
 ## Proxy pool
 

@@ -2,6 +2,7 @@ package whatsmiau
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -40,6 +41,7 @@ type Whatsmiau struct {
 	connectPhoneNumber *xsync.Map[string, string]
 	emitter            chan emitter
 	httpClient         *http.Client
+	streamClient       *http.Client
 	fileStorage        interfaces.Storage
 	handlerSemaphore   chan struct{}
 }
@@ -146,7 +148,23 @@ func LoadMiau(ctx context.Context, container *sqlstore.Container) {
 		connectPhoneNumber: xsync.NewMap[string, string](),
 		emitter:            make(chan emitter, env.Env.EmitterBufferSize),
 		httpClient: &http.Client{
-			Timeout: time.Second * 30, // TODO: load from env
+			Timeout: time.Second * 30,
+		},
+		// Client para transferências cuja duração é proporcional ao tamanho do
+		// corpo (download de mídia, entrega de webhook com mídia inline). Não
+		// tem teto de tempo total porque esse teto mediria o arquivo, não a
+		// saúde do servidor; quem protege contra servidor morto são os tetos por
+		// etapa abaixo mais o deadline do contexto de cada chamada.
+		streamClient: &http.Client{
+			Transport: &http.Transport{
+				Proxy:                 http.ProxyFromEnvironment,
+				DialContext:           (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+				TLSHandshakeTimeout:   15 * time.Second,
+				ResponseHeaderTimeout: 60 * time.Second,
+				ExpectContinueTimeout: time.Second,
+				MaxIdleConns:          100,
+				IdleConnTimeout:       90 * time.Second,
+			},
 		},
 		fileStorage:      storage,
 		handlerSemaphore: make(chan struct{}, env.Env.HandlerSemaphoreSize),

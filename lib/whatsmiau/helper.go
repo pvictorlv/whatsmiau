@@ -43,28 +43,157 @@ func i64(n int64) string {
 	return strconv.FormatInt(n, 10)
 }
 
+// streamHTTP is the client for transfers whose duration is proportional to the
+// size of the body — media downloads and webhook deliveries carrying inline
+// media. It is deliberately not httpClient: that one carries a short total
+// timeout, and a total timeout on a large transfer measures the file rather than
+// the health of the peer, which is exactly what killed big media halfway
+// through. The deadline here comes from the caller's context instead.
+func (s *Whatsmiau) streamHTTP() *http.Client {
+	if s.streamClient != nil {
+		return s.streamClient
+	}
+	return s.httpClient
+}
+
+// mediaCtx caps a media transfer end to end. Without it the media client, which
+// has no total timeout, would hang forever on a source that stalls mid-body.
+func mediaCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+	timeout := env.Env.MediaTransferTimeout
+	if timeout <= 0 {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
 func (s *Whatsmiau) getCtx(ctx context.Context, url string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	res, err := s.httpClient.Do(req)
+	res, err := s.streamHTTP().Do(req)
 	if err != nil {
 		return nil, err
+	}
+
+	// An error page is still a body: without this check a 404 from the storage
+	// bucket used to be uploaded to WhatsApp as if it were the file.
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		res.Body.Close()
+		return nil, fmt.Errorf("failed to fetch media: unexpected status %d", res.StatusCode)
 	}
 
 	return res, nil
 }
 
 // fetchBytes downloads url contents into memory and guarantees the response body is closed.
+// Prefer fetchToTempFile for anything that can be large: this one is only safe
+// for media that is already bounded (audio notes, profile pictures).
 func (s *Whatsmiau) fetchBytes(ctx context.Context, url string) ([]byte, error) {
+	ctx, cancel := mediaCtx(ctx)
+	defer cancel()
+
 	res, err := s.getCtx(ctx, url)
 	if err != nil {
 		return nil, err
 	}
 	defer res.Body.Close()
 	return io.ReadAll(res.Body)
+}
+
+// fetchToTempFile downloads url to disk instead of to memory, rewound and ready
+// to read. An 80MB PDF held as []byte becomes roughly four times that during the
+// upload encryption, which is what made large media fail while small media
+// worked. The caller owns the file and must call closeAndRemove on it.
+func (s *Whatsmiau) fetchToTempFile(ctx context.Context, url string) (*os.File, error) {
+	ctx, cancel := mediaCtx(ctx)
+	defer cancel()
+
+	res, err := s.getCtx(ctx, url)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	tmp, err := os.CreateTemp("", "media-*")
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := io.Copy(tmp, res.Body); err != nil {
+		closeAndRemove(tmp)
+		return nil, fmt.Errorf("failed to download media: %w", err)
+	}
+	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+		closeAndRemove(tmp)
+		return nil, err
+	}
+
+	return tmp, nil
+}
+
+func closeAndRemove(file *os.File) {
+	if file == nil {
+		return
+	}
+	name := file.Name()
+	if err := file.Close(); err != nil {
+		zap.L().Debug("failed to close temp file", zap.String("file", name), zap.Error(err))
+	}
+	if err := os.Remove(name); err != nil {
+		zap.L().Warn("failed to remove temp file", zap.String("file", name), zap.Error(err))
+	}
+}
+
+// uploadFile encrypts and uploads a file without ever holding it in memory.
+// whatsmeow.Upload takes a []byte and makes three full copies of it while
+// encrypting; UploadReader streams through a temporary file instead, so RAM
+// stays flat no matter how big the attachment is.
+func uploadFile(ctx context.Context, client *whatsmeow.Client, file *os.File, mediaType whatsmeow.MediaType) (whatsmeow.UploadResponse, error) {
+	ctx, cancel := mediaCtx(ctx)
+	defer cancel()
+
+	return client.UploadReader(ctx, file, nil, mediaType)
+}
+
+// canInlineBase64 decides whether a downloaded attachment can ride inside the
+// webhook payload. Base64 inflates the file by a third, so an 80MB document
+// becomes a ~107MB JSON body: past a point the delivery is slower than the
+// on-demand fetch it replaces and it trips the consumer's own body limit.
+//
+// A size of -1 means "could not measure", and an unmeasurable file is not worth
+// the gamble. A limit of 0 or less disables the cut entirely.
+func canInlineBase64(size int64) bool {
+	if size < 0 {
+		return false
+	}
+	limit := env.Env.WebhookBase64MaxBytes
+	if limit <= 0 {
+		return true
+	}
+	return size <= limit
+}
+
+// sniffMimetype derives the mimetype from the file header and rewinds the file,
+// for the callers that did not receive one in the request.
+func sniffMimetype(file *os.File, fileName string) string {
+	sample := make([]byte, 512)
+	n, err := file.Read(sample)
+	if err != nil && err != io.EOF {
+		zap.L().Warn("failed to read media header", zap.Error(err))
+		return ""
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		zap.L().Error("failed to rewind media file", zap.Error(err))
+		return ""
+	}
+
+	mimetype, err := extractMimetype(sample[:n], fileName)
+	if err != nil {
+		return ""
+	}
+	return mimetype
 }
 
 // loadClientWithJID validates the instance client, ensures jid is non-nil, and returns

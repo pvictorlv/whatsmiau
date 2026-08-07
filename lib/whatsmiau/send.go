@@ -169,12 +169,17 @@ func (s *Whatsmiau) SendDocument(ctx context.Context, data *SendDocumentRequest)
 		return nil, fmt.Errorf("remote_jid is required")
 	}
 
-	dataBytes, err := s.fetchBytes(ctx, data.MediaURL)
+	file, err := s.fetchToTempFile(ctx, data.MediaURL)
 	if err != nil {
 		return nil, err
 	}
+	defer closeAndRemove(file)
 
-	uploaded, err := client.Upload(ctx, dataBytes, whatsmeow.MediaDocument)
+	if data.Mimetype == "" {
+		data.Mimetype = sniffMimetype(file, data.FileName)
+	}
+
+	uploaded, err := uploadFile(ctx, client, file, whatsmeow.MediaDocument)
 	if err != nil {
 		return nil, err
 	}
@@ -229,18 +234,19 @@ func (s *Whatsmiau) SendImage(ctx context.Context, data *SendImageRequest) (*Sen
 		return nil, fmt.Errorf("remote_jid is required")
 	}
 
-	dataBytes, err := s.fetchBytes(ctx, data.MediaURL)
+	file, err := s.fetchToTempFile(ctx, data.MediaURL)
 	if err != nil {
 		return nil, err
 	}
-
-	uploaded, err := client.Upload(ctx, dataBytes, whatsmeow.MediaImage)
-	if err != nil {
-		return nil, err
-	}
+	defer closeAndRemove(file)
 
 	if data.Mimetype == "" {
-		data.Mimetype, err = extractMimetype(dataBytes, uploaded.URL)
+		data.Mimetype = sniffMimetype(file, "")
+	}
+
+	uploaded, err := uploadFile(ctx, client, file, whatsmeow.MediaImage)
+	if err != nil {
+		return nil, err
 	}
 
 	doc := waE2E.ImageMessage{

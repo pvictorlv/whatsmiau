@@ -46,6 +46,26 @@ type E struct {
 	ProxyPoolCooldown time.Duration `env:"PROXY_POOL_COOLDOWN" envDefault:"5m"`          // quarantine applied to a proxy after a connection failure
 
 	ManagerURL string `env:"MANAGER_URL" envDefault:""`
+
+	// Transferência de mídia. Um único teto de tempo servia webhook, chamadas de
+	// controle E download de arquivo, então o valor tinha que ser curto — e um
+	// valor curto mata o download de um PDF de 80 MB no meio. Cada uso tem o seu.
+	//
+	// MediaTransferTimeout é o teto de ponta a ponta para baixar a mídia de
+	// origem antes de subi-la ao WhatsApp. É um limite de segurança, não uma
+	// espera: transferência normal termina muito antes.
+	MediaTransferTimeout time.Duration `env:"MEDIA_TRANSFER_TIMEOUT" envDefault:"10m"`
+	// MediaEventTimeout é o orçamento de conversão de uma mensagem recebida,
+	// que inclui baixar a mídia do CDN e subi-la ao storage.
+	MediaEventTimeout time.Duration `env:"MEDIA_EVENT_TIMEOUT" envDefault:"10m"`
+	// WebhookTimeout é o teto de uma tentativa de entrega de webhook. Payload com
+	// mídia inline é grande, e 10s não davam nem para o corpo sair.
+	WebhookTimeout time.Duration `env:"WEBHOOK_TIMEOUT" envDefault:"60s"`
+	// WebhookBase64MaxBytes é o tamanho máximo de mídia embutida como base64 no
+	// webhook. Acima disso o consumidor busca sob demanda: base64 infla 33%, e um
+	// corpo de ~107 MB estoura o limite de JSON do consumidor e trava a fila de
+	// eventos. 0 desliga o corte.
+	WebhookBase64MaxBytes int64 `env:"WEBHOOK_BASE64_MAX_BYTES" envDefault:"25165824"` // 24 MiB
 }
 
 var Env E

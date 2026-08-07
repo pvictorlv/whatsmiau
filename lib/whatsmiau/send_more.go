@@ -35,12 +35,13 @@ func (s *Whatsmiau) SendVideo(ctx context.Context, data *SendVideoRequest) (*Sen
 	}
 	data.RemoteJID = &resolved
 
-	dataBytes, err := s.fetchBytes(ctx, data.MediaURL)
+	file, err := s.fetchToTempFile(ctx, data.MediaURL)
 	if err != nil {
 		return nil, err
 	}
+	defer closeAndRemove(file)
 
-	uploaded, err := client.Upload(ctx, dataBytes, whatsmeow.MediaVideo)
+	uploaded, err := uploadFile(ctx, client, file, whatsmeow.MediaVideo)
 	if err != nil {
 		return nil, err
 	}
@@ -91,12 +92,13 @@ func (s *Whatsmiau) SendPtv(ctx context.Context, data *SendPtvRequest) (*SendPtv
 	}
 	data.RemoteJID = &resolved
 
-	dataBytes, err := s.fetchBytes(ctx, data.VideoURL)
+	file, err := s.fetchToTempFile(ctx, data.VideoURL)
 	if err != nil {
 		return nil, err
 	}
+	defer closeAndRemove(file)
 
-	uploaded, err := client.Upload(ctx, dataBytes, whatsmeow.MediaVideo)
+	uploaded, err := uploadFile(ctx, client, file, whatsmeow.MediaVideo)
 	if err != nil {
 		return nil, err
 	}
@@ -140,12 +142,13 @@ func (s *Whatsmiau) SendSticker(ctx context.Context, data *SendStickerRequest) (
 	}
 	data.RemoteJID = &resolved
 
-	dataBytes, err := s.fetchBytes(ctx, data.StickerURL)
+	file, err := s.fetchToTempFile(ctx, data.StickerURL)
 	if err != nil {
 		return nil, err
 	}
+	defer closeAndRemove(file)
 
-	uploaded, err := client.Upload(ctx, dataBytes, whatsmeow.MediaImage)
+	uploaded, err := uploadFile(ctx, client, file, whatsmeow.MediaImage)
 	if err != nil {
 		return nil, err
 	}
@@ -356,17 +359,20 @@ func buildTextStatus(data *SendStatusRequest) *waE2E.Message {
 }
 
 func (s *Whatsmiau) buildImageStatus(ctx context.Context, client *whatsmeow.Client, data *SendStatusRequest) (*waE2E.Message, error) {
-	bytesData, err := s.fetchBytes(ctx, data.Content)
+	file, err := s.fetchToTempFile(ctx, data.Content)
 	if err != nil {
 		return nil, err
 	}
-	uploaded, err := client.Upload(ctx, bytesData, whatsmeow.MediaImage)
-	if err != nil {
-		return nil, err
-	}
-	mimetype, _ := extractMimetype(bytesData, uploaded.URL)
+	defer closeAndRemove(file)
+
+	mimetype := sniffMimetype(file, "")
 	if mimetype == "" {
 		mimetype = "image/jpeg"
+	}
+
+	uploaded, err := uploadFile(ctx, client, file, whatsmeow.MediaImage)
+	if err != nil {
+		return nil, err
 	}
 	return &waE2E.Message{
 		ImageMessage: &waE2E.ImageMessage{
@@ -383,11 +389,13 @@ func (s *Whatsmiau) buildImageStatus(ctx context.Context, client *whatsmeow.Clie
 }
 
 func (s *Whatsmiau) buildVideoStatus(ctx context.Context, client *whatsmeow.Client, data *SendStatusRequest) (*waE2E.Message, error) {
-	bytesData, err := s.fetchBytes(ctx, data.Content)
+	file, err := s.fetchToTempFile(ctx, data.Content)
 	if err != nil {
 		return nil, err
 	}
-	uploaded, err := client.Upload(ctx, bytesData, whatsmeow.MediaVideo)
+	defer closeAndRemove(file)
+
+	uploaded, err := uploadFile(ctx, client, file, whatsmeow.MediaVideo)
 	if err != nil {
 		return nil, err
 	}

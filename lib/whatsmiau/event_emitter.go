@@ -137,10 +137,18 @@ func (s *Whatsmiau) processEmit(event emitter) {
 	)
 }
 
-// doEmit performs a single webhook delivery attempt with a 10s timeout.
-// Returns (success, shouldRetry).
+// doEmit performs a single webhook delivery attempt, bounded by
+// env.WebhookTimeout. Returns (success, shouldRetry).
+//
+// The timeout has to cover writing the whole body, and a payload carrying inline
+// media is measured in megabytes: the old fixed 10s was not enough for the body
+// to even leave the machine, so large media never reached the consumer.
 func (s *Whatsmiau) doEmit(data []byte, url string, headers map[string]string) (bool, bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	timeout := env.Env.WebhookTimeout
+	if timeout <= 0 {
+		timeout = 60 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
@@ -153,7 +161,7 @@ func (s *Whatsmiau) doEmit(data []byte, url string, headers map[string]string) (
 	for key, value := range headers {
 		req.Header.Set(key, value)
 	}
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.streamHTTP().Do(req)
 	if err != nil {
 		zap.L().Error("failed to send webhook", zap.Error(err), zap.String("url", url))
 		return false, true // network error, retry
@@ -1394,7 +1402,14 @@ func (s *Whatsmiau) convertContactHistorySync(id string, event []*waHistorySync.
 }
 
 func (s *Whatsmiau) convertEventMessage(id string, instance *models.Instance, evt *events.Message) *WookMessageData {
-	ctx, c := context.WithTimeout(context.Background(), time.Second*60)
+	// This budget covers downloading the attachment from the CDN and pushing it
+	// to storage, so it scales with the file, not with the conversion. The old
+	// fixed 60s silently dropped the media of anything large.
+	timeout := env.Env.MediaEventTimeout
+	if timeout <= 0 {
+		timeout = 10 * time.Minute
+	}
+	ctx, c := context.WithTimeout(context.Background(), timeout)
 	defer c()
 
 	client, ok := s.clients.Load(id)
@@ -1683,7 +1698,9 @@ func (s *Whatsmiau) uploadMessageFile(ctx context.Context, instanceID string, in
 		panic(err)
 	}
 
-	defer os.Remove(tmpFile.Name())
+	// Remover sem fechar deixava o descritor aberto até o finalizador do GC —
+	// um por mídia recebida.
+	defer closeAndRemove(tmpFile)
 	if err := s.downloadToFileWithRetry(ctx, instanceID, client, fileMessage, tmpFile, mediaRetry); err != nil {
 		zap.L().Error("failed to download media",
 			zap.String("instance", instanceID),
@@ -1698,12 +1715,35 @@ func (s *Whatsmiau) uploadMessageFile(ctx context.Context, instanceID string, in
 	}
 
 	ext = extractExtFromFile(fileName, mimetype, tmpFile)
+
+	// Uma falha ao medir não invalida o download: sem o tamanho só não dá para
+	// decidir pelo inline, e o arquivo ainda vai para o storage.
+	size := int64(-1)
+	if measured, err := tmpFile.Seek(0, io.SeekEnd); err != nil {
+		zap.L().Error("failed to measure media file", zap.Error(err))
+	} else {
+		size = measured
+	}
+
 	if instance.Webhook.Base64 != nil && *instance.Webhook.Base64 {
-		data, err := io.ReadAll(tmpFile)
-		if err != nil {
-			zap.L().Error("failed to read image", zap.Error(err))
+		if canInlineBase64(size) {
+			if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+				zap.L().Error("failed to seek media file", zap.Error(err))
+			} else if data, err := io.ReadAll(tmpFile); err != nil {
+				zap.L().Error("failed to read media file", zap.Error(err))
+			} else {
+				b64Result = base64.StdEncoding.EncodeToString(data)
+			}
 		} else {
-			b64Result = base64.StdEncoding.EncodeToString(data)
+			// Base64 infla o arquivo em 33%: embutir um PDF de 80 MB gera um
+			// corpo de ~107 MB, que estoura o limite de JSON do consumidor e
+			// trava a fila de eventos inteira. O consumidor busca sob demanda
+			// via /chat/getBase64FromMediaMessage.
+			zap.L().Info("media too large to inline in the webhook, consumer must fetch it on demand",
+				zap.String("instance", instanceID),
+				zap.String("mimetype", mimetype),
+				zap.Int64("bytes", size),
+				zap.Int64("limit", env.Env.WebhookBase64MaxBytes))
 		}
 	}
 	if s.fileStorage != nil {
