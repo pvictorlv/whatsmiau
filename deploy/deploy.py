@@ -43,6 +43,9 @@ WM_PORT = int(os.environ.get("WM_PORT", "8085"))   # porta HTTP (NÃO use 8080 =
 WM_REDIS_DB = int(os.environ.get("WM_REDIS_DB", "5"))  # DB lógico isolado no Redis compartilhado
 WM_DIR = os.environ.get("WM_DIR", "/home/whatsmiau")   # diretório de instalação no servidor
 ZAPEADA_ENV = os.environ.get("ZAPEADA_ENV", "/home/deploy/backend/.env")  # creds Redis/Postgres
+# .env do evolution-api, de onde o bootstrap herda a config de storage S3 — os
+# dois serviços gravam no mesmo bucket, separados por prefixo.
+EVOLUTION_ENV = os.environ.get("EVOLUTION_ENV", "/home/evolution-api/.env")
 
 PREBUILT_BINARY = os.environ.get("PREBUILT_BINARY", "")  # opcional: binário linux/amd64 pronto
                               # (se vazio, o script compila do repositório com Go)
@@ -114,7 +117,7 @@ def main():
     # 2. executa o bootstrap no servidor, transmitindo a saída
     envvars = (
         f"WM_DIR={sh(WM_DIR)} WM_PORT={WM_PORT} WM_REDIS_DB={WM_REDIS_DB} "
-        f"ZAPEADA_ENV={sh(ZAPEADA_ENV)}"
+        f"ZAPEADA_ENV={sh(ZAPEADA_ENV)} EVOLUTION_ENV={sh(EVOLUTION_ENV)}"
     )
     cmd = f"sudo {envvars} bash {WM_DIR}/bootstrap.sh"
     print(f"[deploy] executando bootstrap no servidor...\n")
