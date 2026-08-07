@@ -13,6 +13,7 @@ import (
 	"github.com/verbeux-ai/whatsmiau/interfaces"
 	"github.com/verbeux-ai/whatsmiau/lib/proxypool"
 	"github.com/verbeux-ai/whatsmiau/lib/storage/gcs"
+	"github.com/verbeux-ai/whatsmiau/lib/storage/s3"
 	"github.com/verbeux-ai/whatsmiau/models"
 	"github.com/verbeux-ai/whatsmiau/repositories/instances"
 	"github.com/verbeux-ai/whatsmiau/services"
@@ -128,11 +129,29 @@ func LoadMiau(ctx context.Context, container *sqlstore.Container) {
 	}
 
 	var storage interfaces.Storage
-	if env.Env.GCSEnabled {
+	switch {
+	case env.Env.S3Enabled:
+		storage, err = s3.New()
+		if err != nil {
+			zap.L().Panic("failed to create S3 storage", zap.Error(err))
+		}
+		zap.L().Info("media storage enabled",
+			zap.String("backend", "s3"),
+			zap.String("bucket", env.Env.S3Bucket),
+			zap.String("prefix", env.Env.S3Prefix))
+	case env.Env.GCSEnabled:
 		storage, err = gcs.New(env.Env.GCSBucket)
 		if err != nil {
 			zap.L().Panic("failed to create GCS storage", zap.Error(err))
 		}
+		zap.L().Info("media storage enabled",
+			zap.String("backend", "gcs"),
+			zap.String("bucket", env.Env.GCSBucket))
+	default:
+		// Sem storage a mídia recebida só chega ao consumidor embutida como
+		// base64 no webhook, ou por busca sob demanda. As duas passam o arquivo
+		// inteiro pela memória; ligar um storage é o que evita isso.
+		zap.L().Warn("no media storage configured, media will be delivered inline as base64")
 	}
 
 	instance = &Whatsmiau{

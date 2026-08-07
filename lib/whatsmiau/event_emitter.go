@@ -1688,7 +1688,6 @@ func (s *Whatsmiau) convertEventReceipt(id string, evt *events.Receipt) []WookMe
 
 func (s *Whatsmiau) uploadMessageFile(ctx context.Context, instanceID string, instance *models.Instance, client *whatsmeow.Client, fileMessage whatsmeow.DownloadableMessage, mimetype, fileName string, mediaRetry *MediaRetryTarget) (string, string) {
 	var (
-		b64Result string
 		urlResult string
 		ext       string
 	)
@@ -1716,8 +1715,36 @@ func (s *Whatsmiau) uploadMessageFile(ctx context.Context, instanceID string, in
 
 	ext = extractExtFromFile(fileName, mimetype, tmpFile)
 
-	// Uma falha ao medir não invalida o download: sem o tamanho só não dá para
-	// decidir pelo inline, e o arquivo ainda vai para o storage.
+	// O storage vem primeiro porque é ele que decide se o base64 é necessário.
+	// O arquivo é entregue como io.Reader, então sobe em streaming: em nenhum
+	// momento ele existe inteiro na memória.
+	if s.fileStorage != nil {
+		if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+			zap.L().Error("failed to seek media file", zap.Error(err))
+		}
+
+		urlResult, _, err = s.fileStorage.Upload(ctx, mediaObjectName(instanceID, uuid.NewString(), ext), mimetype, tmpFile)
+		if err != nil {
+			zap.L().Error("failed to upload media to storage",
+				zap.String("instance", instanceID),
+				zap.String("mimetype", mimetype),
+				zap.Error(err))
+		}
+	}
+
+	// Com URL no evento o base64 é peso morto: o consumidor lê a URL e ignora o
+	// resto. É também o que a evolution faz — ela só embute base64 quando não
+	// conseguiu produzir uma URL pública.
+	if urlResult != "" {
+		return urlResult, ""
+	}
+
+	if instance.Webhook.Base64 == nil || !*instance.Webhook.Base64 {
+		return "", ""
+	}
+
+	// Uma falha ao medir não invalida o download, mas sem o tamanho não dá para
+	// decidir pelo inline com segurança.
 	size := int64(-1)
 	if measured, err := tmpFile.Seek(0, io.SeekEnd); err != nil {
 		zap.L().Error("failed to measure media file", zap.Error(err))
@@ -1725,39 +1752,45 @@ func (s *Whatsmiau) uploadMessageFile(ctx context.Context, instanceID string, in
 		size = measured
 	}
 
-	if instance.Webhook.Base64 != nil && *instance.Webhook.Base64 {
-		if canInlineBase64(size) {
-			if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
-				zap.L().Error("failed to seek media file", zap.Error(err))
-			} else if data, err := io.ReadAll(tmpFile); err != nil {
-				zap.L().Error("failed to read media file", zap.Error(err))
-			} else {
-				b64Result = base64.StdEncoding.EncodeToString(data)
-			}
-		} else {
-			// Base64 infla o arquivo em 33%: embutir um PDF de 80 MB gera um
-			// corpo de ~107 MB, que estoura o limite de JSON do consumidor e
-			// trava a fila de eventos inteira. O consumidor busca sob demanda
-			// via /chat/getBase64FromMediaMessage.
-			zap.L().Info("media too large to inline in the webhook, consumer must fetch it on demand",
-				zap.String("instance", instanceID),
-				zap.String("mimetype", mimetype),
-				zap.Int64("bytes", size),
-				zap.Int64("limit", env.Env.WebhookBase64MaxBytes))
-		}
-	}
-	if s.fileStorage != nil {
-		if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
-			zap.L().Error("failed to seek image", zap.Error(err))
-		}
-
-		urlResult, _, err = s.fileStorage.Upload(ctx, uuid.NewString()+"."+ext, mimetype, tmpFile)
-		if err != nil {
-			zap.L().Error("failed to upload image", zap.Error(err))
-		}
+	if !canInlineBase64(size) {
+		// Base64 infla o arquivo em 33%: embutir um PDF de 80 MB gera um corpo
+		// de ~107 MB, que estoura o limite de JSON do consumidor e trava a fila
+		// de eventos inteira. O consumidor busca sob demanda via
+		// /chat/getBase64FromMediaMessage.
+		zap.L().Info("media too large to inline in the webhook, consumer must fetch it on demand",
+			zap.String("instance", instanceID),
+			zap.String("mimetype", mimetype),
+			zap.Int64("bytes", size),
+			zap.Int64("limit", env.Env.WebhookBase64MaxBytes))
+		return "", ""
 	}
 
-	return urlResult, b64Result
+	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+		zap.L().Error("failed to seek media file", zap.Error(err))
+		return "", ""
+	}
+
+	data, err := io.ReadAll(tmpFile)
+	if err != nil {
+		zap.L().Error("failed to read media file", zap.Error(err))
+		return "", ""
+	}
+
+	return "", base64.StdEncoding.EncodeToString(data)
+}
+
+// mediaObjectName monta o caminho do objeto no bucket. A instância entra no
+// caminho porque o bucket é compartilhado entre serviços e conexões, e um nome
+// só de UUID não diz de onde o arquivo veio quando é preciso auditar ou limpar.
+func mediaObjectName(instanceID, id, ext string) string {
+	name := id
+	if ext != "" {
+		name += "." + ext
+	}
+	if instanceID == "" {
+		return name
+	}
+	return instanceID + "/" + name
 }
 
 func (s *Whatsmiau) uploadPic(ctx context.Context, waId, b64Data string) (string, error) {

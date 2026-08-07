@@ -13,6 +13,8 @@
 #   WM_PORT       porta HTTP do whatsmiau            (8085)
 #   WM_REDIS_DB   índice do DB lógico no Redis       (5)
 #   ZAPEADA_ENV   .env de onde ler creds Redis/PG    (/home/deploy/backend/.env)
+#   EVOLUTION_ENV .env de onde herdar o storage S3   (/home/evolution-api/.env)
+#   S3_PREFIX     prefixo dos objetos no bucket      (whatsmiau)
 #
 set -euo pipefail
 
@@ -20,6 +22,7 @@ WM_DIR=${WM_DIR:-/home/whatsmiau}
 WM_PORT=${WM_PORT:-8085}
 WM_REDIS_DB=${WM_REDIS_DB:-5}
 ZAPEADA_ENV=${ZAPEADA_ENV:-/home/deploy/backend/.env}
+EVOLUTION_ENV=${EVOLUTION_ENV:-/home/evolution-api/.env}
 WM_DB_NAME=whatsmiau
 WM_DB_USER=whatsmiau
 
@@ -121,10 +124,44 @@ keep_env() { # $1=chave -> ecoa o valor atual do .env do whatsmiau (ou vazio)
   [ -f "$WM_DIR/.env" ] || return 0
   sed -n "s/^$1=//p" "$WM_DIR/.env" | head -1
 }
-PROXY_POOL_FILE=${PROXY_POOL_FILE:-$(keep_env PROXY_POOL_FILE)}
-PROXY_POOL_ROTATION=${PROXY_POOL_ROTATION:-$(keep_env PROXY_POOL_ROTATION)}
-PROXY_POOL_COOLDOWN=${PROXY_POOL_COOLDOWN:-$(keep_env PROXY_POOL_COOLDOWN)}
-PROXY_NO_MEDIA=${PROXY_NO_MEDIA:-$(keep_env PROXY_NO_MEDIA)}
+evo_env() { # $1=chave -> ecoa o valor no .env do evolution-api (ou vazio)
+  [ -f "$EVOLUTION_ENV" ] || return 0
+  grep -E "^$1=" "$EVOLUTION_ENV" 2>/dev/null | head -1 | cut -d= -f2- \
+    | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
+}
+# resolve: ambiente do deploy > .env atual do whatsmiau > .env do evolution.
+# A herança do evolution existe porque o storage é o mesmo bucket: configurá-lo
+# duas vezes é convite para as duas cópias divergirem.
+resolve() { # $1=chave  $2=qualquer valor para permitir herdar do evolution
+  eval "__v=\${$1:-}"
+  if [ -z "$__v" ]; then
+    __v=$(keep_env "$1") || __v=""
+  fi
+  if [ -z "$__v" ] && [ -n "${2:-}" ]; then
+    __v=$(evo_env "$1") || __v=""
+  fi
+  eval "$1=\$__v"
+}
+put_env() { # só escreve chave com valor, para não sobrepor o default do binário
+  if [ -n "$2" ]; then echo "$1=$2" >> "$WM_DIR/.env"; fi
+}
+
+resolve PROXY_POOL_FILE
+resolve PROXY_POOL_ROTATION
+resolve PROXY_POOL_COOLDOWN
+resolve PROXY_NO_MEDIA
+
+# Storage da mídia recebida. Sem ele o arquivo só chega ao CRM embutido como
+# base64 no webhook, que infla o conteúdo em um terço e passa inteiro pela
+# memória dos dois lados — foi o que impediu um PDF de 80 MB de chegar.
+for key in S3_ENABLED S3_ACCESS_KEY S3_SECRET_KEY S3_ENDPOINT S3_PORT \
+           S3_USE_SSL S3_REGION S3_BUCKET S3_PUBLIC_URL; do
+  resolve "$key" inherit
+done
+# O prefixo é nosso: os objetos do evolution vivem sob "evolution-api/" e
+# misturá-los tornaria impossível auditar ou limpar um serviço sem o outro.
+resolve S3_PREFIX
+S3_PREFIX=${S3_PREFIX:-whatsmiau}
 
 umask 077
 cat > "$WM_DIR/.env" <<ENV
@@ -138,18 +175,33 @@ DIALECT_DB=postgres
 DB_URL=postgres://$WM_DB_USER:$WM_DB_PASS@$PG_HOST:$PG_PORT/$WM_DB_NAME?sslmode=disable
 GCS_ENABLED=false
 ENV
-if [ -n "$PROXY_POOL_FILE" ]; then
-  echo "PROXY_POOL_FILE=$PROXY_POOL_FILE" >> "$WM_DIR/.env"
-  log "pool de proxies preservado: $PROXY_POOL_FILE"
-fi
-if [ -n "$PROXY_POOL_ROTATION" ]; then
-  echo "PROXY_POOL_ROTATION=$PROXY_POOL_ROTATION" >> "$WM_DIR/.env"
-fi
-if [ -n "$PROXY_POOL_COOLDOWN" ]; then
-  echo "PROXY_POOL_COOLDOWN=$PROXY_POOL_COOLDOWN" >> "$WM_DIR/.env"
-fi
-if [ -n "$PROXY_NO_MEDIA" ]; then
-  echo "PROXY_NO_MEDIA=$PROXY_NO_MEDIA" >> "$WM_DIR/.env"
+put_env PROXY_POOL_FILE "$PROXY_POOL_FILE"
+if [ -n "$PROXY_POOL_FILE" ]; then log "pool de proxies preservado: $PROXY_POOL_FILE"; fi
+put_env PROXY_POOL_ROTATION "$PROXY_POOL_ROTATION"
+put_env PROXY_POOL_COOLDOWN "$PROXY_POOL_COOLDOWN"
+put_env PROXY_NO_MEDIA "$PROXY_NO_MEDIA"
+
+put_env S3_ENABLED "$S3_ENABLED"
+put_env S3_ACCESS_KEY "$S3_ACCESS_KEY"
+put_env S3_SECRET_KEY "$S3_SECRET_KEY"
+put_env S3_ENDPOINT "$S3_ENDPOINT"
+put_env S3_PORT "$S3_PORT"
+put_env S3_USE_SSL "$S3_USE_SSL"
+put_env S3_REGION "$S3_REGION"
+put_env S3_BUCKET "$S3_BUCKET"
+put_env S3_PUBLIC_URL "$S3_PUBLIC_URL"
+put_env S3_PREFIX "$S3_PREFIX"
+
+if [ "$S3_ENABLED" = "true" ]; then
+  log "storage S3 ligado: bucket=$S3_BUCKET prefixo=$S3_PREFIX/ (mídia recebida vai por URL, sem base64)"
+  if [ -z "$S3_PUBLIC_URL" ]; then
+    log "AVISO: S3_PUBLIC_URL vazio — a mídia será servida por URL assinada, que EXPIRA."
+    log "       A URL fica gravada no histórico do ticket; configure a URL pública."
+  fi
+  log "AVISO: confira se a regra de expiração do bucket cobre o prefixo '$S3_PREFIX/'."
+  log "       Regra por prefixo que só cobre 'evolution-api/' deixa esta mídia lá para sempre."
+else
+  log "AVISO: storage S3 desligado — a mídia recebida vai embutida como base64 no webhook."
 fi
 chmod 600 "$WM_DIR/.env"
 chmod +x "$WM_DIR/whatsmiau"

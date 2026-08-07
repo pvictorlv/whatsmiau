@@ -25,6 +25,32 @@ type E struct {
 	GCSBucket  string `env:"GCS_BUCKET" envDefault:"whatsmiau"`
 	GCSURL     string `env:"GCS_URL" envDefault:"https://storage.googleapis.com"`
 
+	// Storage S3-compatível (R2, MinIO, AWS). Os nomes são iguais aos da
+	// evolution-api de propósito: o bloco do `.env` dela serve aqui sem
+	// tradução, e as duas gravam no mesmo bucket.
+	//
+	// Com storage ligado a mídia recebida vai do CDN direto para o bucket em
+	// streaming e o webhook carrega só a URL — o base64 sai do caminho.
+	S3Enabled   bool   `env:"S3_ENABLED" envDefault:"false"`
+	S3AccessKey string `env:"S3_ACCESS_KEY"`
+	S3SecretKey string `env:"S3_SECRET_KEY"`
+	S3Endpoint  string `env:"S3_ENDPOINT"`
+	S3Port      int    `env:"S3_PORT" envDefault:"443"`
+	S3UseSSL    bool   `env:"S3_USE_SSL" envDefault:"true"`
+	S3Region    string `env:"S3_REGION"`
+	S3Bucket    string `env:"S3_BUCKET"`
+	// S3PublicURL é a base servida publicamente. Vazia, o objeto é entregue por
+	// URL assinada, que expira e por isso não serve para mídia que fica no
+	// histórico do ticket.
+	S3PublicURL string `env:"S3_PUBLIC_URL"`
+	// S3Prefix separa os objetos do whatsmiau dos da evolution no mesmo bucket
+	// (ela usa `evolution-api`). ATENÇÃO: regra de expiração do bucket costuma
+	// ser por prefixo — se a sua expira só `evolution-api/`, aponte isto para lá
+	// ou crie a regra equivalente, senão a mídia do whatsmiau nunca é apagada.
+	S3Prefix string `env:"S3_PREFIX" envDefault:"whatsmiau"`
+	// S3PresignExpiry vale só quando não há S3PublicURL.
+	S3PresignExpiry time.Duration `env:"S3_PRESIGN_EXPIRY" envDefault:"168h"`
+
 	GCL          string `json:"GCL_APP_NAME" envDefault:"whatsmiau-br-1"`
 	GCLEnabled   bool   `json:"GCL_ENABLED" envDefault:"false"`
 	GCLProjectID string `json:"GCL_PROJECT_ID"`
