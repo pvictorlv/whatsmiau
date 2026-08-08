@@ -46,6 +46,39 @@ func TestNumberToJidAcceptsInternationalNumbers(t *testing.T) {
 	}
 }
 
+func TestNumberToJidRoutesGroupIDsToGroupServer(t *testing.T) {
+	groups := map[string]string{
+		// Community id with no server: must not become a user JID.
+		"120363407835046398":      "120363407835046398@g.us",
+		"120363407835046398@g.us": "120363407835046398@g.us",
+		// Legacy "<creator>-<timestamp>" group.
+		"554288215922-1520421573": "554288215922-1520421573@g.us",
+	}
+
+	for input, want := range groups {
+		jid, err := numberToJid(input)
+		if err != nil {
+			t.Errorf("numberToJid(%q) returned unexpected error: %v", input, err)
+			continue
+		}
+		if jid.String() != want {
+			t.Errorf("numberToJid(%q) = %q, want %q", input, jid.String(), want)
+		}
+	}
+}
+
+func TestNumberToJidKeepsPhoneNumbersOnUserServer(t *testing.T) {
+	// 13 digits is a Brazilian phone, not a group — the length rule must not
+	// swallow it.
+	jid, err := numberToJid("5561999211277")
+	if err != nil {
+		t.Fatalf("numberToJid returned unexpected error: %v", err)
+	}
+	if jid.String() != "5561999211277@s.whatsapp.net" {
+		t.Errorf("numberToJid = %q, want %q", jid.String(), "5561999211277@s.whatsapp.net")
+	}
+}
+
 func TestNumberToJidRejectsTooShortNumbers(t *testing.T) {
 	tooShort := []string{"123", "5561"}
 

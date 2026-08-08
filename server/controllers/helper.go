@@ -22,9 +22,37 @@ func isInstanceNotConnected(err error) bool {
 	return errors.Is(err, whatsmeow.ErrClientIsNil) || errors.Is(err, whatsmiau.ErrDeviceNotConnected)
 }
 
+// looksLikeGroupID reports whether a server-less recipient is a group id.
+//
+// Group ids are 18+ digit community ids (120363...) or the legacy
+// "<creator>-<timestamp>" form. The Evolution API guesses the same way
+// (`createJid`: >= 18 digits, or a dash), so a consumer that sends bare digits
+// — as the CRM did for media — kept working there and broke here: the id went
+// out as <id>@s.whatsapp.net and whatsmeow died on "no LID found ... from
+// server". Assuming @s.whatsapp.net for something that cannot be a phone number
+// is never right.
+func looksLikeGroupID(number string) bool {
+	if strings.Contains(number, "-") {
+		return true
+	}
+
+	digits := 0
+	for _, r := range number {
+		if r < '0' || r > '9' {
+			return false
+		}
+		digits++
+	}
+
+	return digits >= 18
+}
+
 func numberToJid(number string) (*types.JID, error) {
 	splitNumber := strings.Split(number, "@")
 	if len(splitNumber) != 2 {
+		if looksLikeGroupID(number) {
+			return parseGroupJID(number)
+		}
 		number += "@s.whatsapp.net"
 	}
 
