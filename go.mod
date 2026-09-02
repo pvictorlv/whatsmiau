@@ -14,6 +14,7 @@ require (
 	github.com/labstack/echo/v4 v4.13.4
 	github.com/lib/pq v1.10.9
 	github.com/mattn/go-sqlite3 v1.14.48
+	github.com/minio/minio-go/v7 v7.2.1
 	github.com/puzpuzpuz/xsync/v4 v4.1.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/stretchr/testify v1.11.1
@@ -77,7 +78,6 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
-	github.com/minio/minio-go/v7 v7.2.1 // indirect
 	github.com/petermattis/goid v0.0.0-20260713124913-97594f28f5ca // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
@@ -125,4 +125,4 @@ require (
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 
-replace go.mau.fi/whatsmeow => github.com/verbeux-ai/whatsmeow v1.3.0
+replace go.mau.fi/whatsmeow => github.com/verbeux-ai/whatsmeow v1.3.6
