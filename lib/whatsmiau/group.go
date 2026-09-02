@@ -241,11 +241,28 @@ func (s *Whatsmiau) FindGroup(ctx context.Context, req *FindGroupRequest) (*Grou
 		return nil, whatsmeow.ErrClientIsNil
 	}
 
+	// O consumidor chama isto no caminho de ingestão de mensagem: uma falha
+	// aqui vira mensagem de grupo descartada do outro lado. Por isso o cache
+	// vem antes da IQ, e o valor vencido ainda serve se a IQ falhar.
+	cached := loadGroupInfoCache(ctx, req.InstanceID, *req.GroupJID)
+	if cached.fresh() {
+		return cached.Data, nil
+	}
+
 	info, err := client.GetGroupInfo(ctx, *req.GroupJID)
 	if err != nil {
+		if cached != nil && cached.Data != nil {
+			zap.L().Warn("serving stale group info after lookup failure",
+				zap.Error(err),
+				zap.String("instance", req.InstanceID),
+				zap.String("group", req.GroupJID.String()),
+				zap.Time("cached_at", cached.CachedAt))
+			return cached.Data, nil
+		}
 		return nil, err
 	}
 	resp := s.buildGroupInfoResponse(ctx, req.InstanceID, info, true)
+	storeGroupInfoCache(ctx, req.InstanceID, *req.GroupJID, &resp)
 	return &resp, nil
 }
 

@@ -568,7 +568,22 @@ func (s *Whatsmiau) observeAndQrCode(ctx context.Context, id string, client *wha
 	}
 }
 
+// deleteDeviceIfExists derruba o cliente E apaga o device. As duas coisas
+// juntas, sempre: um cliente que sobrevive ao próprio device continua com o
+// socket aberto e o handler registrado, recebendo mensagens que não consegue
+// mais decifrar — toda gravação de identidade morre na chave estrangeira
+// `whatsmeow_identity_keys_our_jid_fkey` e todo pedido de reenvio ao aparelho
+// falha com "no signal session established". Visto em produção: um número que
+// já não estava em `whatsmeow_device` seguia consumindo eventos e derrubando a
+// recuperação de mensagem perdida das conexões vivas.
 func (s *Whatsmiau) deleteDeviceIfExists(ctx context.Context, client *whatsmeow.Client) error {
+	// Vale inclusive quando o logout ou o delete abaixo falham: um cliente
+	// órfão que continua conectado é pior do que um device que sobrou no banco.
+	defer func() {
+		client.RemoveEventHandlers()
+		client.Disconnect()
+	}()
+
 	if client.IsLoggedIn() {
 		if err := client.Logout(ctx); err != nil {
 			zap.L().Error("failed to logout", zap.Error(err))

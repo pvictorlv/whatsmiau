@@ -99,6 +99,9 @@ func (s *Whatsmiau) startEmitter() {
 			}
 		}()
 	}
+
+	go s.startWebhookRetryLoop()
+
 	wg.Wait()
 }
 
@@ -132,9 +135,16 @@ func (s *Whatsmiau) processEmit(event emitter) {
 		}
 	}
 
-	zap.L().Error("webhook delivery permanently failed after retries",
+	// As tentativas imediatas cobrem ~3 segundos; um restart do consumidor leva
+	// dez vezes isso. Daqui em diante o evento vive no Redis até ser entregue.
+	zap.L().Warn("webhook delivery failed after immediate retries, handing over to retry queue",
 		zap.String("url", event.url),
 	)
+	enqueueWebhookRetry(webhookRetryItem{
+		URL:     event.url,
+		Headers: event.headers,
+		Body:    data,
+	})
 }
 
 // doEmit performs a single webhook delivery attempt, bounded by
@@ -263,9 +273,14 @@ func (s *Whatsmiau) Handle(id string) whatsmeow.EventHandler {
 			case *events.HistorySync:
 				s.handleHistorySyncEvent(id, instance, e, eventMap)
 			case *events.GroupInfo:
+				// Fora dos handlers de propósito: eles têm gate por evento
+				// assinado, e o cache tem de ser invalidado mesmo quando o
+				// consumidor não assina CONTACTS_UPSERT.
+				invalidateGroupInfoCache(id, e.JID)
 				s.handleGroupInfoEvent(id, instance, e, eventMap)
 				s.handleGroupParticipantsUpdateEvent(id, instance, e, eventMap)
 			case *events.JoinedGroup:
+				invalidateGroupInfoCache(id, e.JID)
 				s.handleJoinedGroupEvent(id, instance, e, eventMap)
 			case *events.PushName:
 				s.handlePushNameEvent(id, instance, e, eventMap)
@@ -322,8 +337,11 @@ func (s *Whatsmiau) handleLoggedOut(id string) {
 	client, ok := s.clients.Load(id)
 	if ok {
 		if err := s.deleteDeviceIfExists(context.Background(), client); err != nil {
+			// Sem `return`: o device pode ter ficado no banco, mas a instância
+			// tem de sair do mapa de qualquer jeito. Sair daqui com o cliente
+			// registrado era o que criava o zumbi — deslogado, sem device
+			// utilizável e ainda assim processando evento.
 			zap.L().Error("failed to delete device for instance", zap.String("instance", id), zap.Error(err))
-			return
 		}
 	}
 
@@ -1412,13 +1430,21 @@ func (s *Whatsmiau) convertEventMessage(id string, instance *models.Instance, ev
 	ctx, c := context.WithTimeout(context.Background(), timeout)
 	defer c()
 
-	client, ok := s.clients.Load(id)
-	if !ok {
-		zap.L().Warn("no client for event", zap.String("id", id))
+	if evt == nil || evt.Message == nil {
+		zap.L().Error("dropping message: empty message payload", zap.String("instance", id))
 		return nil
 	}
 
-	if evt == nil || evt.Message == nil {
+	client, ok := s.clients.Load(id)
+	if !ok {
+		// Mensagem chegou para uma instância que já saiu do mapa (logout,
+		// reconexão em curso). Sem cliente não há como resolver JID/LID nem
+		// baixar mídia — a mensagem morre aqui, então precisa aparecer no log
+		// com o id, senão vira "sumiu" sem rastro.
+		zap.L().Error("dropping message: no client for instance",
+			zap.String("instance", id),
+			zap.String("message_id", evt.Info.ID),
+			zap.String("chat", evt.Info.Chat.String()))
 		return nil
 	}
 
