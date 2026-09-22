@@ -70,6 +70,11 @@ type ListInstancesResponse struct {
 
 	OwnerJID     string `json:"ownerJid,omitempty"`
 	InstanceName string `json:"instanceName,omitempty"`
+	// Estado do socket, no mesmo campo e vocabulário da Evolution ("open",
+	// "connecting", "close"). O watchdog de saúde do CRM varre a frota por este
+	// endpoint; sem o campo ele lia `null` e tratava toda conexão whatsmiau como
+	// "estado desconhecido", isto é, não vigiava nenhuma.
+	ConnectionStatus string `json:"connectionStatus,omitempty"`
 }
 
 type ConnectInstanceRequest struct {

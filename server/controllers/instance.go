@@ -212,10 +212,19 @@ func (s *Instance) List(ctx echo.Context) error {
 			zap.L().Error("failed to parse jid", zap.Error(err))
 		}
 
+		status, err := s.whatsmiau.Status(instance.ID)
+		if err != nil {
+			// Listar não pode falhar por causa do estado de UMA instância: quem
+			// varre a frota prefere a lista com um estado vazio a um 500.
+			zap.L().Warn("failed to get status while listing instances",
+				zap.String("instance", instance.ID), zap.Error(err))
+		}
+
 		response = append(response, dto.ListInstancesResponse{
-			Instance:     &instance,
-			OwnerJID:     jid.ToNonAD().String(),
-			InstanceName: instance.ID,
+			Instance:         &instance,
+			OwnerJID:         jid.ToNonAD().String(),
+			InstanceName:     instance.ID,
+			ConnectionStatus: string(status),
 		})
 	}
 
