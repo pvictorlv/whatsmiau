@@ -1383,6 +1383,13 @@ func (s *Whatsmiau) convertContactHistorySync(id string, event []*waHistorySync.
 			return nil
 		}
 		jidParsed, lid := s.GetJidLid(context.Background(), id, jid)
+		// A conversa do histórico carrega o telefone junto do LID; o mapa do
+		// store pode ainda não tê-lo, e sem ele o CRM recebe um LID puro.
+		if strings.HasSuffix(jidParsed, "@lid") {
+			if pn, err := types.ParseJID(conversation.GetPnJID()); err == nil && pn.Server == types.DefaultUserServer {
+				jidParsed = pn.ToNonAD().String()
+			}
+		}
 
 		resultMap[conversation.GetID()] = WookContact{
 			RemoteJid:  jidParsed,
