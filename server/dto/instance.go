@@ -14,7 +14,7 @@ type CreateInstanceRequest struct {
 }
 
 type MigrationData struct {
-	Creds   json.RawMessage   `json:"creds" validate:"required"`
+	Creds   json.RawMessage   `json:"creds" validate:"required" swaggertype:"object"`
 	PreKeys []MigrationPreKey `json:"preKeys,omitempty"`
 }
 
@@ -41,8 +41,13 @@ type MigrationResult struct {
 }
 
 type UpdateInstanceRequest struct {
-	ID           string `json:"id,omitempty" param:"id" validate:"required" swaggerignore:"true"`
-	GroupsIgnore *bool  `json:"groupsIgnore,omitempty"`
+	ID           string  `json:"id,omitempty" param:"id" validate:"required" swaggerignore:"true"`
+	GroupsIgnore *bool   `json:"groupsIgnore,omitempty"`
+	SaveMedia    *bool   `json:"saveMedia,omitempty"`
+	ReadMessages *bool   `json:"readMessages,omitempty"`
+	RejectCall   *bool   `json:"rejectCall,omitempty"`
+	MsgCall      *string `json:"msgCall,omitempty"`
+	AlwaysOnline *bool   `json:"alwaysOnline,omitempty"`
 	// SyncFullHistory só era aceito no create. Uma instância criada sem ele
 	// ficava presa sem histórico para sempre — não havia rota para ligar o
 	// flag depois, e o handler de HistorySync descarta tudo quando ele é falso.
@@ -126,8 +131,8 @@ type RestartInstanceRequest struct {
 }
 
 type RestartInstanceResponse struct {
-	ID       string                          `json:"id,omitempty"`
-	Status   string                          `json:"state,omitempty"`
+	ID       string                           `json:"id,omitempty"`
+	Status   string                           `json:"state,omitempty"`
 	Instance *RestartInstanceEvoCompatibility `json:"instance,omitempty"`
 }
 

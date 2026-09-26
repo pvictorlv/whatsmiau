@@ -15,12 +15,15 @@ import (
 // --- SendVideo ---
 
 type SendVideoRequest struct {
-	InstanceID  string     `json:"instance_id"`
-	MediaURL    string     `json:"media_url"`
-	Caption     string     `json:"caption"`
-	RemoteJID   *types.JID `json:"remote_jid"`
-	Mimetype    string     `json:"mimetype"`
-	GifPlayback bool       `json:"gif_playback"`
+	InstanceID       string     `json:"instance_id"`
+	MediaURL         string     `json:"media_url"`
+	Caption          string     `json:"caption"`
+	RemoteJID        *types.JID `json:"remote_jid"`
+	Mimetype         string     `json:"mimetype"`
+	GifPlayback      bool       `json:"gif_playback"`
+	Quote            *Quote     `json:"quote,omitempty"`
+	MentionsEveryOne bool       `json:"mentionsEveryOne,omitempty"`
+	Mentioned        []string   `json:"mentioned,omitempty"`
 }
 
 type SendVideoResponse struct {
@@ -34,6 +37,11 @@ func (s *Whatsmiau) SendVideo(ctx context.Context, data *SendVideoRequest) (*Sen
 		return nil, err
 	}
 	data.RemoteJID = &resolved
+
+	mentioned, everyone, err := s.resolveMentions(resolved, data.MentionsEveryOne, data.Mentioned)
+	if err != nil {
+		return nil, err
+	}
 
 	file, err := s.fetchToTempFile(ctx, data.MediaURL)
 	if err != nil {
@@ -59,6 +67,7 @@ func (s *Whatsmiau) SendVideo(ctx context.Context, data *SendVideoRequest) (*Sen
 		MediaKey:      uploaded.MediaKey,
 		FileEncSHA256: uploaded.FileEncSHA256,
 		DirectPath:    proto.String(uploaded.DirectPath),
+		ContextInfo:   buildContextInfo(data.Quote, mentioned, everyone),
 	}
 	if data.GifPlayback {
 		video.GifPlayback = proto.Bool(true)
@@ -75,9 +84,12 @@ func (s *Whatsmiau) SendVideo(ctx context.Context, data *SendVideoRequest) (*Sen
 // --- SendPtv (Round/Note Video) ---
 
 type SendPtvRequest struct {
-	InstanceID string     `json:"instance_id"`
-	VideoURL   string     `json:"video_url"`
-	RemoteJID  *types.JID `json:"remote_jid"`
+	InstanceID       string     `json:"instance_id"`
+	VideoURL         string     `json:"video_url"`
+	RemoteJID        *types.JID `json:"remote_jid"`
+	Quote            *Quote     `json:"quote,omitempty"`
+	MentionsEveryOne bool       `json:"mentionsEveryOne,omitempty"`
+	Mentioned        []string   `json:"mentioned,omitempty"`
 }
 
 type SendPtvResponse struct {
@@ -91,6 +103,11 @@ func (s *Whatsmiau) SendPtv(ctx context.Context, data *SendPtvRequest) (*SendPtv
 		return nil, err
 	}
 	data.RemoteJID = &resolved
+
+	mentioned, everyone, err := s.resolveMentions(resolved, data.MentionsEveryOne, data.Mentioned)
+	if err != nil {
+		return nil, err
+	}
 
 	file, err := s.fetchToTempFile(ctx, data.VideoURL)
 	if err != nil {
@@ -112,6 +129,7 @@ func (s *Whatsmiau) SendPtv(ctx context.Context, data *SendPtvRequest) (*SendPtv
 		FileEncSHA256:   uploaded.FileEncSHA256,
 		DirectPath:      proto.String(uploaded.DirectPath),
 		VideoSourceType: waE2E.VideoMessage_USER_VIDEO.Enum(),
+		ContextInfo:     buildContextInfo(data.Quote, mentioned, everyone),
 	}
 
 	res, err := client.SendMessage(ctx, resolved, &waE2E.Message{PtvMessage: &video})
@@ -125,9 +143,12 @@ func (s *Whatsmiau) SendPtv(ctx context.Context, data *SendPtvRequest) (*SendPtv
 // --- SendSticker ---
 
 type SendStickerRequest struct {
-	InstanceID string     `json:"instance_id"`
-	StickerURL string     `json:"sticker_url"`
-	RemoteJID  *types.JID `json:"remote_jid"`
+	InstanceID       string     `json:"instance_id"`
+	StickerURL       string     `json:"sticker_url"`
+	RemoteJID        *types.JID `json:"remote_jid"`
+	Quote            *Quote     `json:"quote,omitempty"`
+	MentionsEveryOne bool       `json:"mentionsEveryOne,omitempty"`
+	Mentioned        []string   `json:"mentioned,omitempty"`
 }
 
 type SendStickerResponse struct {
@@ -141,6 +162,11 @@ func (s *Whatsmiau) SendSticker(ctx context.Context, data *SendStickerRequest) (
 		return nil, err
 	}
 	data.RemoteJID = &resolved
+
+	mentioned, everyone, err := s.resolveMentions(resolved, data.MentionsEveryOne, data.Mentioned)
+	if err != nil {
+		return nil, err
+	}
 
 	file, err := s.fetchToTempFile(ctx, data.StickerURL)
 	if err != nil {
@@ -161,6 +187,7 @@ func (s *Whatsmiau) SendSticker(ctx context.Context, data *SendStickerRequest) (
 		MediaKey:      uploaded.MediaKey,
 		FileEncSHA256: uploaded.FileEncSHA256,
 		DirectPath:    proto.String(uploaded.DirectPath),
+		ContextInfo:   buildContextInfo(data.Quote, mentioned, everyone),
 	}
 
 	res, err := client.SendMessage(ctx, resolved, &waE2E.Message{StickerMessage: &sticker})
@@ -174,12 +201,15 @@ func (s *Whatsmiau) SendSticker(ctx context.Context, data *SendStickerRequest) (
 // --- SendLocation ---
 
 type SendLocationRequest struct {
-	InstanceID string     `json:"instance_id"`
-	RemoteJID  *types.JID `json:"remote_jid"`
-	Latitude   float64    `json:"latitude"`
-	Longitude  float64    `json:"longitude"`
-	Name       string     `json:"name"`
-	Address    string     `json:"address"`
+	InstanceID       string     `json:"instance_id"`
+	RemoteJID        *types.JID `json:"remote_jid"`
+	Latitude         float64    `json:"latitude"`
+	Longitude        float64    `json:"longitude"`
+	Name             string     `json:"name"`
+	Address          string     `json:"address"`
+	Quote            *Quote     `json:"quote,omitempty"`
+	MentionsEveryOne bool       `json:"mentionsEveryOne,omitempty"`
+	Mentioned        []string   `json:"mentioned,omitempty"`
 }
 
 type SendLocationResponse struct {
@@ -194,9 +224,15 @@ func (s *Whatsmiau) SendLocation(ctx context.Context, data *SendLocationRequest)
 	}
 	data.RemoteJID = &resolved
 
+	mentioned, everyone, err := s.resolveMentions(resolved, data.MentionsEveryOne, data.Mentioned)
+	if err != nil {
+		return nil, err
+	}
+
 	loc := &waE2E.LocationMessage{
 		DegreesLatitude:  proto.Float64(data.Latitude),
 		DegreesLongitude: proto.Float64(data.Longitude),
+		ContextInfo:      buildContextInfo(data.Quote, mentioned, everyone),
 	}
 	if data.Name != "" {
 		loc.Name = proto.String(data.Name)
@@ -225,9 +261,12 @@ type SendContactItem struct {
 }
 
 type SendContactRequest struct {
-	InstanceID string            `json:"instance_id"`
-	RemoteJID  *types.JID        `json:"remote_jid"`
-	Contacts   []SendContactItem `json:"contacts"`
+	InstanceID       string            `json:"instance_id"`
+	RemoteJID        *types.JID        `json:"remote_jid"`
+	Contacts         []SendContactItem `json:"contacts"`
+	Quote            *Quote            `json:"quote,omitempty"`
+	MentionsEveryOne bool              `json:"mentionsEveryOne,omitempty"`
+	Mentioned        []string          `json:"mentioned,omitempty"`
 }
 
 type SendContactResponse struct {
@@ -253,9 +292,16 @@ func (s *Whatsmiau) SendContact(ctx context.Context, data *SendContactRequest) (
 	}
 	data.RemoteJID = &resolved
 
+	mentioned, everyone, err := s.resolveMentions(resolved, data.MentionsEveryOne, data.Mentioned)
+	if err != nil {
+		return nil, err
+	}
+
 	var msg *waE2E.Message
 	if len(data.Contacts) == 1 {
-		msg = &waE2E.Message{ContactMessage: contactToProto(data.Contacts[0])}
+		contact := contactToProto(data.Contacts[0])
+		contact.ContextInfo = buildContextInfo(data.Quote, mentioned, everyone)
+		msg = &waE2E.Message{ContactMessage: contact}
 	} else {
 		contacts := make([]*waE2E.ContactMessage, 0, len(data.Contacts))
 		for _, c := range data.Contacts {
@@ -265,6 +311,7 @@ func (s *Whatsmiau) SendContact(ctx context.Context, data *SendContactRequest) (
 			ContactsArrayMessage: &waE2E.ContactsArrayMessage{
 				DisplayName: proto.String(data.Contacts[0].FullName),
 				Contacts:    contacts,
+				ContextInfo: buildContextInfo(data.Quote, mentioned, everyone),
 			},
 		}
 	}
@@ -280,11 +327,14 @@ func (s *Whatsmiau) SendContact(ctx context.Context, data *SendContactRequest) (
 // --- SendPoll ---
 
 type SendPollRequest struct {
-	InstanceID      string     `json:"instance_id"`
-	RemoteJID       *types.JID `json:"remote_jid"`
-	Name            string     `json:"name"`
-	SelectableCount int        `json:"selectable_count"`
-	Values          []string   `json:"values"`
+	InstanceID       string     `json:"instance_id"`
+	RemoteJID        *types.JID `json:"remote_jid"`
+	Name             string     `json:"name"`
+	SelectableCount  int        `json:"selectable_count"`
+	Values           []string   `json:"values"`
+	Quote            *Quote     `json:"quote,omitempty"`
+	MentionsEveryOne bool       `json:"mentionsEveryOne,omitempty"`
+	Mentioned        []string   `json:"mentioned,omitempty"`
 }
 
 type SendPollResponse struct {
@@ -303,7 +353,13 @@ func (s *Whatsmiau) SendPoll(ctx context.Context, data *SendPollRequest) (*SendP
 	}
 	data.RemoteJID = &resolved
 
+	mentioned, everyone, err := s.resolveMentions(resolved, data.MentionsEveryOne, data.Mentioned)
+	if err != nil {
+		return nil, err
+	}
+
 	pollMsg := client.BuildPollCreation(data.Name, data.Values, data.SelectableCount)
+	pollMsg.PollCreationMessage.ContextInfo = buildContextInfo(data.Quote, mentioned, everyone)
 
 	res, err := client.SendMessage(ctx, resolved, pollMsg)
 	if err != nil {

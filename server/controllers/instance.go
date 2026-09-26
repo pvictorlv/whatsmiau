@@ -45,8 +45,8 @@ func NewInstances(repository interfaces.InstanceRepository, whatsmiau *whatsmiau
 // @Failure      400   {object}  utils.HTTPErrorResponse
 // @Failure      422   {object}  utils.HTTPErrorResponse
 // @Failure      500   {object}  utils.HTTPErrorResponse
-// @Router       /instance [post]
-// @Router       /instance/create [post]
+// @Router       /v1/instance [post]
+// @Router       /v1/instance/create [post]
 func (s *Instance) Create(ctx echo.Context) error {
 	var request dto.CreateInstanceRequest
 	if err := ctx.Bind(&request); err != nil {
@@ -129,7 +129,7 @@ func (s *Instance) Create(ctx echo.Context) error {
 // @Failure      404   {object}  utils.HTTPErrorResponse
 // @Failure      422   {object}  utils.HTTPErrorResponse
 // @Failure      500   {object}  utils.HTTPErrorResponse
-// @Router       /instance/update/{id} [put]
+// @Router       /v1/instance/update/{id} [put]
 func (s *Instance) Update(ctx echo.Context) error {
 	var request dto.UpdateInstanceRequest
 	if err := ctx.Bind(&request); err != nil {
@@ -158,6 +158,21 @@ func (s *Instance) Update(ctx echo.Context) error {
 	if request.SyncFullHistory != nil {
 		toUpdate.SyncFullHistory = request.SyncFullHistory
 	}
+	if request.SaveMedia != nil {
+		toUpdate.SaveMedia = request.SaveMedia
+	}
+	if request.ReadMessages != nil {
+		toUpdate.ReadMessages = request.ReadMessages
+	}
+	if request.AlwaysOnline != nil {
+		toUpdate.AlwaysOnline = request.AlwaysOnline
+	}
+	if request.MsgCall != nil {
+		toUpdate.MsgCall = request.MsgCall
+	}
+	if request.RejectCall != nil {
+		toUpdate.RejectCall = request.RejectCall
+	}
 
 	instance, err := s.repo.Update(c, request.ID, toUpdate)
 	if err != nil {
@@ -170,6 +185,11 @@ func (s *Instance) Update(ctx echo.Context) error {
 
 	// Invalidate in-memory cache so settings like GroupsIgnore take effect immediately
 	s.whatsmiau.InvalidateInstanceCache(request.ID)
+
+	// Apply presence right away so the toggle takes effect without waiting for a reconnect
+	if request.AlwaysOnline != nil {
+		s.whatsmiau.ApplyPresence(request.ID, *request.AlwaysOnline)
+	}
 
 	return ctx.JSON(http.StatusCreated, dto.UpdateInstanceResponse{
 		Instance: instance,
@@ -187,8 +207,8 @@ func (s *Instance) Update(ctx echo.Context) error {
 // @Success      200  {array}   dto.ListInstancesResponse
 // @Failure      422  {object}  utils.HTTPErrorResponse
 // @Failure      500  {object}  utils.HTTPErrorResponse
-// @Router       /instance [get]
-// @Router       /instance/fetchInstances [get]
+// @Router       /v1/instance [get]
+// @Router       /v1/instance/fetchInstances [get]
 func (s *Instance) List(ctx echo.Context) error {
 	c := ctx.Request().Context()
 	var request dto.ListInstancesRequest
@@ -237,7 +257,7 @@ func (s *Instance) List(ctx echo.Context) error {
 
 // Connect godoc
 // @Summary      Connect an instance (get QR code)
-// @Description  Initiates connection for an instance. Returns a base64-encoded QR code PNG if not yet connected, or a connected status message.
+// @Description  Initiates connection for an instance. Returns a base64-encoded QR code PNG if not yet connected, or a connected status message. While the QR code is being generated after an expiry, returns 200 with connected=false and no base64.
 // @Tags         Instance
 // @Produce      json
 // @Security     ApiKeyAuth
@@ -246,8 +266,8 @@ func (s *Instance) List(ctx echo.Context) error {
 // @Failure      404  {object}  utils.HTTPErrorResponse
 // @Failure      422  {object}  utils.HTTPErrorResponse
 // @Failure      500  {object}  utils.HTTPErrorResponse
-// @Router       /instance/{id}/connect [post]
-// @Router       /instance/connect/{id} [get]
+// @Router       /v1/instance/{id}/connect [post]
+// @Router       /v1/instance/connect/{id} [get]
 func (s *Instance) Connect(ctx echo.Context) error {
 	c := ctx.Request().Context()
 	var request dto.ConnectInstanceRequest
@@ -267,6 +287,12 @@ func (s *Instance) Connect(ctx echo.Context) error {
 
 	qrCode, pairingCode, err := s.whatsmiau.Connect(c, request.ID, request.Number)
 	if err != nil {
+		if errors.Is(err, whatsmiau.ErrAwaitingQR) {
+			return ctx.JSON(http.StatusOK, dto.ConnectInstanceResponse{
+				Connected: false,
+				Message:   "waiting for QR code generation",
+			})
+		}
 		zap.L().Error("failed to connect instance", zap.Error(err))
 		return utils.HTTPFail(ctx, http.StatusInternalServerError, err, "failed to connect instance")
 	}
@@ -302,7 +328,7 @@ func (s *Instance) Connect(ctx echo.Context) error {
 // @Failure      404  {object}  utils.HTTPErrorResponse
 // @Failure      422  {object}  utils.HTTPErrorResponse
 // @Failure      500  {object}  utils.HTTPErrorResponse
-// @Router       /instance/connect/{id}/image [get]
+// @Router       /v1/instance/connect/{id}/image [get]
 func (s *Instance) ConnectQRBuffer(ctx echo.Context) error {
 	c := ctx.Request().Context()
 	var request dto.ConnectInstanceRequest
@@ -322,6 +348,9 @@ func (s *Instance) ConnectQRBuffer(ctx echo.Context) error {
 
 	qrCode, _, err := s.whatsmiau.Connect(c, request.ID, "")
 	if err != nil {
+		if errors.Is(err, whatsmiau.ErrAwaitingQR) {
+			return ctx.NoContent(http.StatusOK)
+		}
 		zap.L().Error("failed to connect instance", zap.Error(err))
 		return utils.HTTPFail(ctx, http.StatusInternalServerError, err, "failed to connect instance")
 	}
@@ -348,8 +377,8 @@ func (s *Instance) ConnectQRBuffer(ctx echo.Context) error {
 // @Failure      404  {object}  utils.HTTPErrorResponse
 // @Failure      422  {object}  utils.HTTPErrorResponse
 // @Failure      500  {object}  utils.HTTPErrorResponse
-// @Router       /instance/{id}/status [get]
-// @Router       /instance/connectionState/{id} [get]
+// @Router       /v1/instance/{id}/status [get]
+// @Router       /v1/instance/connectionState/{id} [get]
 func (s *Instance) Status(ctx echo.Context) error {
 	c := ctx.Request().Context()
 	var request dto.ConnectInstanceRequest
@@ -394,8 +423,8 @@ func (s *Instance) Status(ctx echo.Context) error {
 // @Failure      404  {object}  utils.HTTPErrorResponse
 // @Failure      422  {object}  utils.HTTPErrorResponse
 // @Failure      500  {object}  utils.HTTPErrorResponse
-// @Router       /instance/{id}/logout [post]
-// @Router       /instance/logout/{id} [delete]
+// @Router       /v1/instance/{id}/logout [post]
+// @Router       /v1/instance/logout/{id} [delete]
 func (s *Instance) Logout(ctx echo.Context) error {
 	c := ctx.Request().Context()
 	var request dto.DeleteInstanceRequest
@@ -433,8 +462,8 @@ func (s *Instance) Logout(ctx echo.Context) error {
 // @Success      200  {object}  dto.DeleteInstanceResponse
 // @Failure      422  {object}  utils.HTTPErrorResponse
 // @Failure      500  {object}  utils.HTTPErrorResponse
-// @Router       /instance/{id} [delete]
-// @Router       /instance/delete/{id} [delete]
+// @Router       /v1/instance/{id} [delete]
+// @Router       /v1/instance/delete/{id} [delete]
 func (s *Instance) Delete(ctx echo.Context) error {
 	c := ctx.Request().Context()
 	var request dto.DeleteInstanceRequest
@@ -442,24 +471,12 @@ func (s *Instance) Delete(ctx echo.Context) error {
 		return utils.HTTPFail(ctx, http.StatusUnprocessableEntity, err, "failed to bind request body")
 	}
 
-	result, err := s.repo.List(c, request.ID)
-	if err != nil {
-		zap.L().Error("failed to list instances", zap.Error(err))
-		return utils.HTTPFail(ctx, http.StatusInternalServerError, err, "failed to list instances")
-	}
-
-	if len(result) == 0 {
-		return ctx.JSON(http.StatusOK, dto.DeleteInstanceResponse{
-			Message: "instance doesn't exists",
-		})
-	}
-
-	if err := s.whatsmiau.Logout(ctx.Request().Context(), request.ID); err != nil {
-		zap.L().Error("failed to disconnect instance", zap.Error(err))
-		return utils.HTTPFail(ctx, http.StatusInternalServerError, err, "failed to logout instance")
-	}
-
-	if err := s.repo.Delete(c, request.ID); err != nil {
+	if err := s.whatsmiau.Delete(c, request.ID); err != nil {
+		if errors.Is(err, instances.ErrorNotFound) {
+			return ctx.JSON(http.StatusOK, dto.DeleteInstanceResponse{
+				Message: "instance doesn't exist",
+			})
+		}
 		zap.L().Error("failed to delete instance", zap.Error(err))
 		return utils.HTTPFail(ctx, http.StatusInternalServerError, err, "failed to delete instance")
 	}
@@ -481,8 +498,8 @@ func (s *Instance) Delete(ctx echo.Context) error {
 // @Failure      404  {object}  utils.HTTPErrorResponse
 // @Failure      422  {object}  utils.HTTPErrorResponse
 // @Failure      500  {object}  utils.HTTPErrorResponse
-// @Router       /instance/{id}/restart [post]
-// @Router       /instance/restart/{id} [post]
+// @Router       /v1/instance/{id}/restart [post]
+// @Router       /v1/instance/restart/{id} [post]
 func (s *Instance) Restart(ctx echo.Context) error {
 	c := ctx.Request().Context()
 	var request dto.RestartInstanceRequest

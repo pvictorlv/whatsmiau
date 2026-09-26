@@ -205,7 +205,7 @@ func (s *Whatsmiau) Migrate(ctx context.Context, instanceID string, credsRaw jso
 	client := whatsmeow.NewClient(device, s.logger)
 	configureRecovery(client)
 	client.AddEventHandler(s.Handle(instanceID))
-	s.clients.Store(instanceID, client)
+	s.storeClient(instanceID, client)
 
 	connected := false
 	if err := client.Connect(); err != nil {

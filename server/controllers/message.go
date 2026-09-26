@@ -44,8 +44,8 @@ var emojiRegex = regexp.MustCompile(`[\x{1F000}-\x{1FFFF}]|[\x{2300}-\x{23FF}]|[
 // @Failure      400       {object}  utils.HTTPErrorResponse
 // @Failure      422       {object}  utils.HTTPErrorResponse
 // @Failure      500       {object}  utils.HTTPErrorResponse
-// @Router       /instance/{instance}/message/text [post]
-// @Router       /message/sendText/{instance} [post]
+// @Router       /v1/instance/{instance}/message/text [post]
+// @Router       /v1/message/sendText/{instance} [post]
 func (s *Message) SendText(ctx echo.Context) error {
 	var request dto.SendTextRequest
 	if err := ctx.Bind(&request); err != nil {
@@ -62,19 +62,20 @@ func (s *Message) SendText(ctx echo.Context) error {
 		return utils.HTTPFail(ctx, http.StatusBadRequest, err, "invalid number format")
 	}
 
-	sendText := &whatsmiau.SendText{
-		Text:       request.Text,
-		InstanceID: request.InstanceID,
-		RemoteJID:  jid,
+	quote, err := buildQuote(request.Quoted)
+	if err != nil {
+		zap.L().Error("error converting quoted participant to jid", zap.Error(err))
+		return utils.HTTPFail(ctx, http.StatusBadRequest, err, "invalid quoted participant format")
 	}
 
-	if q := request.Quoted; q != nil && len(q.Key.Id) > 0 && len(q.Message.Text()) > 0 {
-		sendText.QuoteMessage = q.Message.Text()
-		sendText.QuoteMessageID = q.Key.Id
-		sendText.QuoteFromMe = q.Key.FromMe
-		if p, err := types.ParseJID(q.Key.Participant); err == nil && !p.IsEmpty() && p.Server != "" {
-			sendText.Participant = &p
-		}
+	sendText := &whatsmiau.SendText{
+		Text:             request.Text,
+		InstanceID:       request.InstanceID,
+		RemoteJID:        jid,
+		Quote:            quote,
+		LinkPreview:      request.LinkPreview,
+		MentionsEveryOne: request.MentionsEveryOne,
+		Mentioned:        request.Mentioned,
 	}
 
 	c := ctx.Request().Context()
@@ -123,8 +124,8 @@ func (s *Message) SendText(ctx echo.Context) error {
 // @Failure      400       {object}  utils.HTTPErrorResponse
 // @Failure      422       {object}  utils.HTTPErrorResponse
 // @Failure      500       {object}  utils.HTTPErrorResponse
-// @Router       /instance/{instance}/message/audio [post]
-// @Router       /message/sendWhatsAppAudio/{instance} [post]
+// @Router       /v1/instance/{instance}/message/audio [post]
+// @Router       /v1/message/sendWhatsAppAudio/{instance} [post]
 func (s *Message) SendAudio(ctx echo.Context) error {
 	var request dto.SendAudioRequest
 	if err := ctx.Bind(&request); err != nil {
@@ -141,15 +142,19 @@ func (s *Message) SendAudio(ctx echo.Context) error {
 		return utils.HTTPFail(ctx, http.StatusBadRequest, err, "invalid number format")
 	}
 
-	sendText := &whatsmiau.SendAudioRequest{
-		AudioURL:   request.Audio,
-		InstanceID: request.InstanceID,
-		RemoteJID:  jid,
+	quote, err := buildQuote(request.Quoted)
+	if err != nil {
+		zap.L().Error("error converting quoted participant to jid", zap.Error(err))
+		return utils.HTTPFail(ctx, http.StatusBadRequest, err, "invalid quoted participant format")
 	}
 
-	if request.Quoted != nil && len(request.Quoted.Key.Id) > 0 && len(request.Quoted.Message.Conversation) > 0 {
-		sendText.QuoteMessage = request.Quoted.Message.Conversation
-		sendText.QuoteMessageID = request.Quoted.Key.Id
+	sendText := &whatsmiau.SendAudioRequest{
+		AudioURL:         request.Audio,
+		InstanceID:       request.InstanceID,
+		RemoteJID:        jid,
+		Quote:            quote,
+		MentionsEveryOne: request.MentionsEveryOne,
+		Mentioned:        request.Mentioned,
 	}
 
 	c := ctx.Request().Context()
@@ -197,7 +202,7 @@ func (s *Message) SendAudio(ctx echo.Context) error {
 // @Failure      400       {object}  utils.HTTPErrorResponse
 // @Failure      422       {object}  utils.HTTPErrorResponse
 // @Failure      500       {object}  utils.HTTPErrorResponse
-// @Router       /message/sendMedia/{instance} [post]
+// @Router       /v1/message/sendMedia/{instance} [post]
 func (s *Message) SendMedia(ctx echo.Context) error {
 	var request dto.SendMediaRequest
 	if err := ctx.Bind(&request); err != nil {
@@ -231,7 +236,7 @@ func (s *Message) SendMedia(ctx echo.Context) error {
 // @Failure      400       {object}  utils.HTTPErrorResponse
 // @Failure      422       {object}  utils.HTTPErrorResponse
 // @Failure      500       {object}  utils.HTTPErrorResponse
-// @Router       /instance/{instance}/message/document [post]
+// @Router       /v1/instance/{instance}/message/document [post]
 func (s *Message) SendDocument(ctx echo.Context) error {
 	var request dto.SendDocumentRequest
 	if err := ctx.Bind(&request); err != nil {
@@ -252,13 +257,22 @@ func (s *Message) sendDocument(ctx echo.Context, request dto.SendDocumentRequest
 		return utils.HTTPFail(ctx, http.StatusBadRequest, err, "invalid number format")
 	}
 
+	quote, err := buildQuote(request.Quoted)
+	if err != nil {
+		zap.L().Error("error converting quoted participant to jid", zap.Error(err))
+		return utils.HTTPFail(ctx, http.StatusBadRequest, err, "invalid quoted participant format")
+	}
+
 	sendData := &whatsmiau.SendDocumentRequest{
-		InstanceID: request.InstanceID,
-		MediaURL:   request.Media,
-		Caption:    request.Caption,
-		FileName:   request.FileName,
-		RemoteJID:  jid,
-		Mimetype:   request.Mimetype,
+		InstanceID:       request.InstanceID,
+		MediaURL:         request.Media,
+		Caption:          request.Caption,
+		FileName:         request.FileName,
+		RemoteJID:        jid,
+		Mimetype:         request.Mimetype,
+		Quote:            quote,
+		MentionsEveryOne: request.MentionsEveryOne,
+		Mentioned:        request.Mentioned,
 	}
 
 	c := ctx.Request().Context()
@@ -296,7 +310,7 @@ func (s *Message) sendDocument(ctx echo.Context, request dto.SendDocumentRequest
 // @Failure      400       {object}  utils.HTTPErrorResponse
 // @Failure      422       {object}  utils.HTTPErrorResponse
 // @Failure      500       {object}  utils.HTTPErrorResponse
-// @Router       /instance/{instance}/message/image [post]
+// @Router       /v1/instance/{instance}/message/image [post]
 func (s *Message) SendImage(ctx echo.Context) error {
 	var request dto.SendDocumentRequest
 	if err := ctx.Bind(&request); err != nil {
@@ -317,12 +331,21 @@ func (s *Message) sendImage(ctx echo.Context, request dto.SendDocumentRequest) e
 		return utils.HTTPFail(ctx, http.StatusBadRequest, err, "invalid number format")
 	}
 
+	quote, err := buildQuote(request.Quoted)
+	if err != nil {
+		zap.L().Error("error converting quoted participant to jid", zap.Error(err))
+		return utils.HTTPFail(ctx, http.StatusBadRequest, err, "invalid quoted participant format")
+	}
+
 	sendData := &whatsmiau.SendImageRequest{
-		InstanceID: request.InstanceID,
-		MediaURL:   request.Media,
-		Caption:    request.Caption,
-		RemoteJID:  jid,
-		Mimetype:   request.Mimetype,
+		InstanceID:       request.InstanceID,
+		MediaURL:         request.Media,
+		Caption:          request.Caption,
+		RemoteJID:        jid,
+		Mimetype:         request.Mimetype,
+		Quote:            quote,
+		MentionsEveryOne: request.MentionsEveryOne,
+		Mentioned:        request.Mentioned,
 	}
 
 	c := ctx.Request().Context()
@@ -360,7 +383,7 @@ func (s *Message) sendImage(ctx echo.Context, request dto.SendDocumentRequest) e
 // @Failure      400       {object}  utils.HTTPErrorResponse
 // @Failure      422       {object}  utils.HTTPErrorResponse
 // @Failure      500       {object}  utils.HTTPErrorResponse
-// @Router       /message/sendReaction/{instance} [post]
+// @Router       /v1/message/sendReaction/{instance} [post]
 func (s *Message) SendReaction(ctx echo.Context) error {
 	var request dto.SendReactionRequest
 	if err := ctx.Bind(&request); err != nil {
@@ -422,8 +445,8 @@ func (s *Message) SendReaction(ctx echo.Context) error {
 // @Failure      400       {object}  utils.HTTPErrorResponse
 // @Failure      422       {object}  utils.HTTPErrorResponse
 // @Failure      500       {object}  utils.HTTPErrorResponse
-// @Router       /instance/{instance}/message/list [post]
-// @Router       /message/sendList/{instance} [post]
+// @Router       /v1/instance/{instance}/message/list [post]
+// @Router       /v1/message/sendList/{instance} [post]
 func (s *Message) SendList(ctx echo.Context) error {
 	var request dto.SendListRequest
 	if err := ctx.Bind(&request); err != nil {
@@ -510,8 +533,8 @@ func (s *Message) SendList(ctx echo.Context) error {
 // @Failure      400       {object}  utils.HTTPErrorResponse
 // @Failure      422       {object}  utils.HTTPErrorResponse
 // @Failure      500       {object}  utils.HTTPErrorResponse
-// @Router       /instance/{instance}/message/buttons [post]
-// @Router       /message/sendButtons/{instance} [post]
+// @Router       /v1/instance/{instance}/message/buttons [post]
+// @Router       /v1/message/sendButtons/{instance} [post]
 func (s *Message) SendButtons(ctx echo.Context) error {
 	var request dto.SendButtonsRequest
 	if err := ctx.Bind(&request); err != nil {

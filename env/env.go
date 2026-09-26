@@ -92,6 +92,12 @@ type E struct {
 	// corpo de ~107 MB estoura o limite de JSON do consumidor e trava a fila de
 	// eventos. 0 desliga o corte.
 	WebhookBase64MaxBytes int64 `env:"WEBHOOK_BASE64_MAX_BYTES" envDefault:"25165824"` // 24 MiB
+	// CallsEnabled enables the experimental 1:1 call API. It is deliberately
+	// disabled by default because WhatsApp calls are protocol-sensitive.
+	CallsEnabled bool `env:"CALLS_ENABLED" envDefault:"false"`
+	// CallDebug emits sanitized incoming offer shapes for controlled protocol
+	// tests. It never logs call keys, encrypted payloads, call IDs, or JIDs.
+	CallDebug bool `env:"CALL_DEBUG" envDefault:"false"`
 }
 
 var Env E

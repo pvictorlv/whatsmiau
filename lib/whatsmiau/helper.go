@@ -88,9 +88,18 @@ func (s *Whatsmiau) getCtx(ctx context.Context, url string) (*http.Response, err
 }
 
 // fetchBytes downloads url contents into memory and guarantees the response body is closed.
-// Prefer fetchToTempFile for anything that can be large: this one is only safe
-// for media that is already bounded (audio notes, profile pictures).
+// Supports both HTTP(S) URLs and data: URIs (Base64). Prefer fetchToTempFile
+// for anything that can be large: this one is only safe for media that is
+// already bounded (audio notes, profile pictures).
 func (s *Whatsmiau) fetchBytes(ctx context.Context, url string) ([]byte, error) {
+	if strings.HasPrefix(url, "data:") {
+		_, _, decoded, err := extractFromBase64(url)
+		if err != nil {
+			return nil, fmt.Errorf("decode base64 media: %w", err)
+		}
+		return decoded, nil
+	}
+
 	ctx, cancel := mediaCtx(ctx)
 	defer cancel()
 
@@ -107,21 +116,31 @@ func (s *Whatsmiau) fetchBytes(ctx context.Context, url string) ([]byte, error) 
 // upload encryption, which is what made large media fail while small media
 // worked. The caller owns the file and must call closeAndRemove on it.
 func (s *Whatsmiau) fetchToTempFile(ctx context.Context, url string) (*os.File, error) {
-	ctx, cancel := mediaCtx(ctx)
-	defer cancel()
+	var body io.Reader
+	if strings.HasPrefix(url, "data:") {
+		_, _, decoded, err := extractFromBase64(url)
+		if err != nil {
+			return nil, fmt.Errorf("decode base64 media: %w", err)
+		}
+		body = bytes.NewReader(decoded)
+	} else {
+		ctx, cancel := mediaCtx(ctx)
+		defer cancel()
 
-	res, err := s.getCtx(ctx, url)
-	if err != nil {
-		return nil, err
+		res, err := s.getCtx(ctx, url)
+		if err != nil {
+			return nil, err
+		}
+		defer res.Body.Close()
+		body = res.Body
 	}
-	defer res.Body.Close()
 
 	tmp, err := os.CreateTemp("", "media-*")
 	if err != nil {
 		return nil, err
 	}
 
-	if _, err := io.Copy(tmp, res.Body); err != nil {
+	if _, err := io.Copy(tmp, body); err != nil {
 		closeAndRemove(tmp)
 		return nil, fmt.Errorf("failed to download media: %w", err)
 	}
@@ -476,6 +495,13 @@ func extractExtFromFile(fileName, mimeType string, file *os.File) string {
 
 func canIgnoreMessage(msg *events.Message) bool {
 	return strings.Contains(msg.Info.Chat.String(), "status")
+}
+
+// shouldSaveMedia returns true if message media must be persisted in the file storage.
+// A nil SaveMedia means enabled, preserving the behavior of instances created before
+// this flag existed.
+func shouldSaveMedia(instance *models.Instance) bool {
+	return instance.SaveMedia == nil || *instance.SaveMedia
 }
 
 // canIgnoreGroup returns true if group can be ignored

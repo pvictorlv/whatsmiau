@@ -21,8 +21,102 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/": {
+        "/docs": {
             "get": {
+                "description": "Redirects to the generated Swagger UI. Use its Authorize dialog to configure the standard apikey header before trying authenticated operations.",
+                "produces": [
+                    "text/html"
+                ],
+                "tags": [
+                    "Documentation"
+                ],
+                "summary": "Open the Swagger UI",
+                "responses": {
+                    "302": {
+                        "description": "Redirect to Swagger UI",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/docs/swagger.json": {
+            "get": {
+                "description": "The document is public so the Swagger UI can load before the user enters a key. API operations remain protected by ApiKeyAuth.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Documentation"
+                ],
+                "summary": "Download Swagger JSON for the UI",
+                "responses": {
+                    "200": {
+                        "description": "Swagger 2.0 document",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/docs/swagger.yaml": {
+            "get": {
+                "description": "The document is public so the Swagger UI can load before the user enters a key. API operations remain protected by ApiKeyAuth.",
+                "produces": [
+                    "application/yaml"
+                ],
+                "tags": [
+                    "Documentation"
+                ],
+                "summary": "Download Swagger YAML for the UI",
+                "responses": {
+                    "200": {
+                        "description": "Swagger 2.0 YAML document",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/docs/{asset}": {
+            "get": {
+                "description": "Serves Swagger UI assets. The API key is configured through Swagger's built-in Authorize dialog and is sent only to authenticated API operations.",
+                "produces": [
+                    "text/html"
+                ],
+                "tags": [
+                    "Documentation"
+                ],
+                "summary": "Serve a Swagger UI asset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Swagger UI asset name",
+                        "name": "asset",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Swagger UI HTML, JavaScript, CSS, or image asset",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Returns API status, version, and WhatsApp Web client version",
                 "produces": [
                     "application/json"
@@ -43,11 +137,17 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/utils.HTTPErrorResponse"
                         }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/utils.AuthenticationErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/chat/deleteMessageForEveryone/{instance}": {
+        "/v1/chat/deleteMessageForEveryone/{instance}": {
             "delete": {
                 "security": [
                     {
@@ -112,14 +212,78 @@ const docTemplate = `{
                 }
             }
         },
-        "/chat/markMessageAsRead/{instance}": {
+        "/v1/chat/fetchProfilePictureUrl/{instance}": {
             "post": {
                 "security": [
                     {
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Marks one or more messages as read in a WhatsApp conversation",
+                "description": "Returns the full-size profile picture URL for a number or group JID, mirroring Evolution API's POST /chat/fetchProfilePictureUrl. profilePictureUrl is null when the target has no picture or hid it.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chat"
+                ],
+                "summary": "Fetch profile picture URL",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID",
+                        "name": "instance",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Number or JID",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.FetchProfilePictureRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.FetchProfilePictureResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/chat/markMessageAsRead/{instance}": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Marks one or more messages as read in a WhatsApp conversation. Set \"played\" on an item to send a played receipt instead, which is what turns a voice note's microphone blue.",
                 "consumes": [
                     "application/json"
                 ],
@@ -177,7 +341,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/chat/sendPresence/{instance}": {
+        "/v1/chat/sendPresence/{instance}": {
             "post": {
                 "security": [
                     {
@@ -242,7 +406,150 @@ const docTemplate = `{
                 }
             }
         },
-        "/chat/whatsappNumbers/{instance}": {
+        "/v1/chat/syncMessages/{instance}": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Requests message history for a chat from the user's primary device (on-demand history sync). The primary device (phone) must have a server-connected WhatsApp session — history is served from its local message store. The ` + "`" + `id` + "`" + ` anchor is required: history is returned backwards from it, ` + "`" + `count` + "`" + ` messages per page (default 50). Optionally paginates back to a target date with ` + "`" + `since` + "`" + `. A single request returns at most 500 messages. Recommended not to be used for bulk history extraction.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chat"
+                ],
+                "summary": "Sync chat messages on demand",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID",
+                        "name": "instance",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Sync parameters",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.SyncChatMessagesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Messages synced from the chat",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/whatsmiau.WookMessageData"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/chat/updateMessage/{instance}": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Edits a previously sent text message, mirroring Evolution API's POST /chat/updateMessage",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chat"
+                ],
+                "summary": "Edit a message",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID",
+                        "name": "instance",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Message edit parameters",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateMessageRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateMessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/chat/whatsappNumbers/{instance}": {
             "post": {
                 "security": [
                     {
@@ -309,7 +616,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/group/acceptInviteCode/{instance}": {
+        "/v1/group/acceptInviteCode/{instance}": {
             "get": {
                 "security": [
                     {
@@ -345,11 +652,53 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/whatsmiau.AcceptGroupInviteResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/group/create/{instance}": {
+        "/v1/group/create/{instance}": {
             "post": {
                 "security": [
                     {
@@ -397,8 +746,32 @@ const docTemplate = `{
                             "$ref": "#/definitions/utils.HTTPErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
                     "422": {
                         "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
                         "schema": {
                             "$ref": "#/definitions/utils.HTTPErrorResponse"
                         }
@@ -412,7 +785,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/group/fetchAllGroups/{instance}": {
+        "/v1/group/fetchAllGroups/{instance}": {
             "get": {
                 "security": [
                     {
@@ -450,11 +823,53 @@ const docTemplate = `{
                                 "$ref": "#/definitions/whatsmiau.GroupInfoResponse"
                             }
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/group/findGroupInfos/{instance}": {
+        "/v1/group/findGroupInfos/{instance}": {
             "get": {
                 "security": [
                     {
@@ -490,11 +905,53 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/whatsmiau.GroupInfoResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/group/inviteCode/{instance}": {
+        "/v1/group/inviteCode/{instance}": {
             "get": {
                 "security": [
                     {
@@ -530,11 +987,53 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/whatsmiau.InviteCodeResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/group/inviteInfo/{instance}": {
+        "/v1/group/inviteInfo/{instance}": {
             "get": {
                 "security": [
                     {
@@ -570,11 +1069,53 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/whatsmiau.GroupInfoResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/group/leaveGroup/{instance}": {
+        "/v1/group/leaveGroup/{instance}": {
             "delete": {
                 "security": [
                     {
@@ -611,11 +1152,53 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/group/participants/{instance}": {
+        "/v1/group/participants/{instance}": {
             "get": {
                 "security": [
                     {
@@ -651,11 +1234,53 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/whatsmiau.FindParticipantsResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/group/revokeInviteCode/{instance}": {
+        "/v1/group/revokeInviteCode/{instance}": {
             "post": {
                 "security": [
                     {
@@ -696,11 +1321,53 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/whatsmiau.InviteCodeResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/group/sendInvite/{instance}": {
+        "/v1/group/sendInvite/{instance}": {
             "post": {
                 "security": [
                     {
@@ -741,11 +1408,142 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/whatsmiau.SendGroupInviteResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/group/toggleEphemeral/{instance}": {
+        "/v1/group/setMemberAddMode/{instance}": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Accepts a regular group or subgroup JID. Community parent JIDs are rejected by WhatsApp.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Group"
+                ],
+                "summary": "Toggle who can add members (admins only or all)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID",
+                        "name": "instance",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Mode payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.GroupSetMemberAddModeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/group/toggleEphemeral/{instance}": {
             "post": {
                 "security": [
                     {
@@ -787,11 +1585,53 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/group/updateGroupDescription/{instance}": {
+        "/v1/group/updateGroupDescription/{instance}": {
             "post": {
                 "security": [
                     {
@@ -833,11 +1673,53 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/group/updateGroupPicture/{instance}": {
+        "/v1/group/updateGroupPicture/{instance}": {
             "post": {
                 "security": [
                     {
@@ -878,11 +1760,53 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/whatsmiau.SetGroupPictureResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/group/updateGroupSubject/{instance}": {
+        "/v1/group/updateGroupSubject/{instance}": {
             "post": {
                 "security": [
                     {
@@ -924,11 +1848,53 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/group/updateParticipant/{instance}": {
+        "/v1/group/updateParticipant/{instance}": {
             "post": {
                 "security": [
                     {
@@ -969,11 +1935,53 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/whatsmiau.UpdateParticipantResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/group/updateSetting/{instance}": {
+        "/v1/group/updateSetting/{instance}": {
             "post": {
                 "security": [
                     {
@@ -1015,11 +2023,53 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/instance": {
+        "/v1/instance": {
             "get": {
                 "security": [
                     {
@@ -1128,14 +2178,14 @@ const docTemplate = `{
                 }
             }
         },
-        "/instance/connect/{id}": {
+        "/v1/instance/connect/{id}": {
             "get": {
                 "security": [
                     {
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Initiates connection for an instance. Returns a base64-encoded QR code PNG if not yet connected, or a connected status message.",
+                "description": "Initiates connection for an instance. Returns a base64-encoded QR code PNG if not yet connected, or a connected status message. While the QR code is being generated after an expiry, returns 200 with connected=false and no base64.",
                 "produces": [
                     "application/json"
                 ],
@@ -1180,7 +2230,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/instance/connect/{id}/image": {
+        "/v1/instance/connect/{id}/image": {
             "get": {
                 "security": [
                     {
@@ -1235,7 +2285,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/instance/connectionState/{id}": {
+        "/v1/instance/connectionState/{id}": {
             "get": {
                 "security": [
                     {
@@ -1287,7 +2337,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/instance/create": {
+        "/v1/instance/create": {
             "post": {
                 "security": [
                     {
@@ -1344,7 +2394,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/instance/delete/{id}": {
+        "/v1/instance/delete/{id}": {
             "delete": {
                 "security": [
                     {
@@ -1390,7 +2440,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/instance/fetchInstances": {
+        "/v1/instance/fetchInstances": {
             "get": {
                 "security": [
                     {
@@ -1444,7 +2494,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/instance/logout/{id}": {
+        "/v1/instance/logout/{id}": {
             "delete": {
                 "security": [
                     {
@@ -1496,7 +2546,65 @@ const docTemplate = `{
                 }
             }
         },
-        "/instance/update/{id}": {
+        "/v1/instance/restart/{id}": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Disconnects and reconnects the WhatsApp websocket without logging out",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Instance"
+                ],
+                "summary": "Restart an instance connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.RestartInstanceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/instance/update/{id}": {
             "put": {
                 "security": [
                     {
@@ -1566,7 +2674,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/instance/{id}": {
+        "/v1/instance/{id}": {
             "delete": {
                 "security": [
                     {
@@ -1612,14 +2720,14 @@ const docTemplate = `{
                 }
             }
         },
-        "/instance/{id}/connect": {
+        "/v1/instance/{id}/connect": {
             "post": {
                 "security": [
                     {
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Initiates connection for an instance. Returns a base64-encoded QR code PNG if not yet connected, or a connected status message.",
+                "description": "Initiates connection for an instance. Returns a base64-encoded QR code PNG if not yet connected, or a connected status message. While the QR code is being generated after an expiry, returns 200 with connected=false and no base64.",
                 "produces": [
                     "application/json"
                 ],
@@ -1664,7 +2772,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/instance/{id}/logout": {
+        "/v1/instance/{id}/logout": {
             "post": {
                 "security": [
                     {
@@ -1716,7 +2824,65 @@ const docTemplate = `{
                 }
             }
         },
-        "/instance/{id}/status": {
+        "/v1/instance/{id}/restart": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Disconnects and reconnects the WhatsApp websocket without logging out",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Instance"
+                ],
+                "summary": "Restart an instance connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.RestartInstanceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/instance/{id}/status": {
             "get": {
                 "security": [
                     {
@@ -1768,7 +2934,332 @@ const docTemplate = `{
                 }
             }
         },
-        "/instance/{instance}/chat/deleteMessageForEveryone": {
+        "/v1/instance/{instance}/calls": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Calls"
+                ],
+                "summary": "List calls",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID",
+                        "name": "instance",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.CallSessionResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/utils.AuthenticationErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Calls"
+                ],
+                "summary": "Place an audio call",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID",
+                        "name": "instance",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Call target",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CallOfferRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CallOfferResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/utils.AuthenticationErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/instance/{instance}/calls/{callID}/answer": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Answers only a currently ringing incoming call. The call session capability flags indicate whether this action is allowed.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Calls"
+                ],
+                "summary": "Answer an incoming call",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID",
+                        "name": "instance",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Call ID",
+                        "name": "callID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CallActionResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/utils.AuthenticationErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/instance/{instance}/calls/{callID}/audio": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Upgrades to WebSocket. Each client-to-call and call-to-client binary message must be exactly 3,840 bytes: 960 little-endian float32 PCM samples, mono, 16 kHz (60 ms). No SDP, relay data, encrypted media, or call keys cross this boundary.",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Calls"
+                ],
+                "summary": "Open the call audio WebSocket",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID",
+                        "name": "instance",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Call ID",
+                        "name": "callID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "101": {
+                        "description": "WebSocket Switching Protocols",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/utils.AuthenticationErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/instance/{instance}/calls/{callID}/hangup": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Calls"
+                ],
+                "summary": "Hang up a call",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID",
+                        "name": "instance",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Call ID",
+                        "name": "callID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CallActionResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/utils.AuthenticationErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/instance/{instance}/calls/{callID}/reject": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Calls"
+                ],
+                "summary": "Reject an incoming call",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID",
+                        "name": "instance",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Call ID",
+                        "name": "callID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CallActionResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/utils.AuthenticationErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/instance/{instance}/chat/deleteMessageForEveryone": {
             "delete": {
                 "security": [
                     {
@@ -1833,7 +3324,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/instance/{instance}/chat/presence": {
+        "/v1/instance/{instance}/chat/presence": {
             "post": {
                 "security": [
                     {
@@ -1898,14 +3389,14 @@ const docTemplate = `{
                 }
             }
         },
-        "/instance/{instance}/chat/read-messages": {
+        "/v1/instance/{instance}/chat/read-messages": {
             "post": {
                 "security": [
                     {
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Marks one or more messages as read in a WhatsApp conversation",
+                "description": "Marks one or more messages as read in a WhatsApp conversation. Set \"played\" on an item to send a played receipt instead, which is what turns a voice note's microphone blue.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1963,7 +3454,86 @@ const docTemplate = `{
                 }
             }
         },
-        "/instance/{instance}/community/create": {
+        "/v1/instance/{instance}/chat/syncMessages": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Requests message history for a chat from the user's primary device (on-demand history sync). The primary device (phone) must have a server-connected WhatsApp session — history is served from its local message store. The ` + "`" + `id` + "`" + ` anchor is required: history is returned backwards from it, ` + "`" + `count` + "`" + ` messages per page (default 50). Optionally paginates back to a target date with ` + "`" + `since` + "`" + `. A single request returns at most 500 messages. Recommended not to be used for bulk history extraction.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chat"
+                ],
+                "summary": "Sync chat messages on demand",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID",
+                        "name": "instance",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Sync parameters",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.SyncChatMessagesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Messages synced from the chat",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/whatsmiau.WookMessageData"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/instance/{instance}/community/create": {
             "post": {
                 "security": [
                     {
@@ -2004,11 +3574,53 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/whatsmiau.GroupInfoResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/instance/{instance}/community/createSubGroup": {
+        "/v1/instance/{instance}/community/createSubGroup": {
             "post": {
                 "security": [
                     {
@@ -2049,11 +3661,53 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/whatsmiau.GroupInfoResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/instance/{instance}/community/linkGroup": {
+        "/v1/instance/{instance}/community/linkGroup": {
             "post": {
                 "security": [
                     {
@@ -2095,11 +3749,53 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/instance/{instance}/community/linkedGroupsParticipants": {
+        "/v1/instance/{instance}/community/linkedGroupsParticipants": {
             "get": {
                 "security": [
                     {
@@ -2138,11 +3834,53 @@ const docTemplate = `{
                                 "$ref": "#/definitions/whatsmiau.LinkedParticipantResponse"
                             }
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/instance/{instance}/community/requestParticipants": {
+        "/v1/instance/{instance}/community/requestParticipants": {
             "get": {
                 "security": [
                     {
@@ -2181,11 +3919,53 @@ const docTemplate = `{
                                 "$ref": "#/definitions/whatsmiau.RequestParticipantResponse"
                             }
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/instance/{instance}/community/requestParticipants/update": {
+        "/v1/instance/{instance}/community/requestParticipants/update": {
             "post": {
                 "security": [
                     {
@@ -2226,11 +4006,142 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/whatsmiau.UpdateParticipantResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/instance/{instance}/community/setJoinApprovalMode": {
+        "/v1/instance/{instance}/community/setGroupAddMode": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Use admin_add to restrict adding/linking groups to community admins, or all_member_add to allow any community member.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Community"
+                ],
+                "summary": "Set who can add groups to a community",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID",
+                        "name": "instance",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Community group-add mode payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CommunitySetAddModeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/instance/{instance}/community/setJoinApprovalMode": {
             "post": {
                 "security": [
                     {
@@ -2272,57 +4183,53 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
-                    }
-                }
-            }
-        },
-        "/instance/{instance}/community/setMemberAddMode": {
-            "post": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Community"
-                ],
-                "summary": "Toggle who can add members (admins only or all)",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Instance ID",
-                        "name": "instance",
-                        "in": "path",
-                        "required": true
                     },
-                    {
-                        "description": "Mode payload",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/dto.CommunitySetMemberAddModeRequest"
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
                         }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
                         }
                     }
                 }
             }
         },
-        "/instance/{instance}/community/subGroups": {
+        "/v1/instance/{instance}/community/subGroups": {
             "get": {
                 "security": [
                     {
@@ -2361,11 +4268,53 @@ const docTemplate = `{
                                 "$ref": "#/definitions/whatsmiau.SubGroupResponse"
                             }
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/instance/{instance}/community/unlinkGroup": {
+        "/v1/instance/{instance}/community/unlinkGroup": {
             "post": {
                 "security": [
                     {
@@ -2407,11 +4356,53 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/instance/{instance}/group/acceptInviteCode": {
+        "/v1/instance/{instance}/group/acceptInviteCode": {
             "get": {
                 "security": [
                     {
@@ -2447,11 +4438,53 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/whatsmiau.AcceptGroupInviteResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/instance/{instance}/group/create": {
+        "/v1/instance/{instance}/group/create": {
             "post": {
                 "security": [
                     {
@@ -2499,8 +4532,32 @@ const docTemplate = `{
                             "$ref": "#/definitions/utils.HTTPErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
                     "422": {
                         "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
                         "schema": {
                             "$ref": "#/definitions/utils.HTTPErrorResponse"
                         }
@@ -2514,7 +4571,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/instance/{instance}/group/fetchAllGroups": {
+        "/v1/instance/{instance}/group/fetchAllGroups": {
             "get": {
                 "security": [
                     {
@@ -2552,11 +4609,53 @@ const docTemplate = `{
                                 "$ref": "#/definitions/whatsmiau.GroupInfoResponse"
                             }
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/instance/{instance}/group/findGroupInfos": {
+        "/v1/instance/{instance}/group/findGroupInfos": {
             "get": {
                 "security": [
                     {
@@ -2592,11 +4691,53 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/whatsmiau.GroupInfoResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/instance/{instance}/group/inviteCode": {
+        "/v1/instance/{instance}/group/inviteCode": {
             "get": {
                 "security": [
                     {
@@ -2632,11 +4773,53 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/whatsmiau.InviteCodeResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/instance/{instance}/group/inviteInfo": {
+        "/v1/instance/{instance}/group/inviteInfo": {
             "get": {
                 "security": [
                     {
@@ -2672,11 +4855,53 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/whatsmiau.GroupInfoResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/instance/{instance}/group/leaveGroup": {
+        "/v1/instance/{instance}/group/leaveGroup": {
             "delete": {
                 "security": [
                     {
@@ -2713,11 +4938,53 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/instance/{instance}/group/participants": {
+        "/v1/instance/{instance}/group/participants": {
             "get": {
                 "security": [
                     {
@@ -2753,11 +5020,53 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/whatsmiau.FindParticipantsResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/instance/{instance}/group/revokeInviteCode": {
+        "/v1/instance/{instance}/group/revokeInviteCode": {
             "post": {
                 "security": [
                     {
@@ -2798,11 +5107,53 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/whatsmiau.InviteCodeResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/instance/{instance}/group/sendInvite": {
+        "/v1/instance/{instance}/group/sendInvite": {
             "post": {
                 "security": [
                     {
@@ -2843,11 +5194,142 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/whatsmiau.SendGroupInviteResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/instance/{instance}/group/toggleEphemeral": {
+        "/v1/instance/{instance}/group/setMemberAddMode": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Accepts a regular group or subgroup JID. Community parent JIDs are rejected by WhatsApp.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Group"
+                ],
+                "summary": "Toggle who can add members (admins only or all)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID",
+                        "name": "instance",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Mode payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.GroupSetMemberAddModeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/instance/{instance}/group/toggleEphemeral": {
             "post": {
                 "security": [
                     {
@@ -2889,11 +5371,53 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/instance/{instance}/group/updateGroupDescription": {
+        "/v1/instance/{instance}/group/updateGroupDescription": {
             "post": {
                 "security": [
                     {
@@ -2935,11 +5459,53 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/instance/{instance}/group/updateGroupPicture": {
+        "/v1/instance/{instance}/group/updateGroupPicture": {
             "post": {
                 "security": [
                     {
@@ -2980,11 +5546,53 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/whatsmiau.SetGroupPictureResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/instance/{instance}/group/updateGroupSubject": {
+        "/v1/instance/{instance}/group/updateGroupSubject": {
             "post": {
                 "security": [
                     {
@@ -3026,11 +5634,53 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/instance/{instance}/group/updateParticipant": {
+        "/v1/instance/{instance}/group/updateParticipant": {
             "post": {
                 "security": [
                     {
@@ -3071,11 +5721,53 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/whatsmiau.UpdateParticipantResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/instance/{instance}/group/updateSetting": {
+        "/v1/instance/{instance}/group/updateSetting": {
             "post": {
                 "security": [
                     {
@@ -3117,11 +5809,53 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/instance/{instance}/message/audio": {
+        "/v1/instance/{instance}/message/audio": {
             "post": {
                 "security": [
                     {
@@ -3185,7 +5919,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/instance/{instance}/message/buttons": {
+        "/v1/instance/{instance}/message/buttons": {
             "post": {
                 "security": [
                     {
@@ -3249,7 +5983,71 @@ const docTemplate = `{
                 }
             }
         },
-        "/instance/{instance}/message/document": {
+        "/v1/instance/{instance}/message/contact": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Sends contact cards (vCard) to a WhatsApp number",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Message"
+                ],
+                "summary": "Send one or more contacts",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID",
+                        "name": "instance",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Contact parameters",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.SendContactRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.SendContactResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/instance/{instance}/message/document": {
             "post": {
                 "security": [
                     {
@@ -3313,7 +6111,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/instance/{instance}/message/image": {
+        "/v1/instance/{instance}/message/image": {
             "post": {
                 "security": [
                     {
@@ -3377,7 +6175,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/instance/{instance}/message/list": {
+        "/v1/instance/{instance}/message/list": {
             "post": {
                 "security": [
                     {
@@ -3441,7 +6239,263 @@ const docTemplate = `{
                 }
             }
         },
-        "/instance/{instance}/message/text": {
+        "/v1/instance/{instance}/message/location": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Sends a geographic location to a WhatsApp number",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Message"
+                ],
+                "summary": "Send a location message",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID",
+                        "name": "instance",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Location parameters",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.SendLocationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.SendLocationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/instance/{instance}/message/poll": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Sends a multiple-choice poll to a WhatsApp number",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Message"
+                ],
+                "summary": "Send a poll",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID",
+                        "name": "instance",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Poll parameters",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.SendPollRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.SendPollResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/instance/{instance}/message/status": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Sends a status (text/image/audio/video) to status@broadcast",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Message"
+                ],
+                "summary": "Send a status broadcast",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID",
+                        "name": "instance",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Status parameters",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.SendStatusRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.SendStatusResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/instance/{instance}/message/sticker": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Sends a WebP sticker to a WhatsApp number",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Message"
+                ],
+                "summary": "Send a sticker",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID",
+                        "name": "instance",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Sticker parameters",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.SendStickerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.SendStickerResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/instance/{instance}/message/text": {
             "post": {
                 "security": [
                     {
@@ -3505,7 +6559,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/instance/{instance}/message/video": {
+        "/v1/instance/{instance}/message/video": {
             "post": {
                 "security": [
                     {
@@ -3547,11 +6601,29 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/dto.SendDocumentResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/message/sendButtons/{instance}": {
+        "/v1/message/sendButtons/{instance}": {
             "post": {
                 "security": [
                     {
@@ -3615,7 +6687,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/message/sendContact/{instance}": {
+        "/v1/message/sendContact/{instance}": {
             "post": {
                 "security": [
                     {
@@ -3657,11 +6729,29 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/dto.SendContactResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/message/sendList/{instance}": {
+        "/v1/message/sendList/{instance}": {
             "post": {
                 "security": [
                     {
@@ -3725,7 +6815,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/message/sendLocation/{instance}": {
+        "/v1/message/sendLocation/{instance}": {
             "post": {
                 "security": [
                     {
@@ -3767,11 +6857,29 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/dto.SendLocationResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/message/sendMedia/{instance}": {
+        "/v1/message/sendMedia/{instance}": {
             "post": {
                 "security": [
                     {
@@ -3835,7 +6943,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/message/sendPoll/{instance}": {
+        "/v1/message/sendPoll/{instance}": {
             "post": {
                 "security": [
                     {
@@ -3877,11 +6985,29 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/dto.SendPollResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/message/sendPtv/{instance}": {
+        "/v1/message/sendPtv/{instance}": {
             "post": {
                 "security": [
                     {
@@ -3923,11 +7049,29 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/dto.SendPtvResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/message/sendReaction/{instance}": {
+        "/v1/message/sendReaction/{instance}": {
             "post": {
                 "security": [
                     {
@@ -3991,7 +7135,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/message/sendStatus/{instance}": {
+        "/v1/message/sendStatus/{instance}": {
             "post": {
                 "security": [
                     {
@@ -4033,11 +7177,29 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/dto.SendStatusResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/message/sendSticker/{instance}": {
+        "/v1/message/sendSticker/{instance}": {
             "post": {
                 "security": [
                     {
@@ -4079,11 +7241,29 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/dto.SendStickerResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
                     }
                 }
             }
         },
-        "/message/sendText/{instance}": {
+        "/v1/message/sendText/{instance}": {
             "post": {
                 "security": [
                     {
@@ -4147,7 +7327,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/message/sendWhatsAppAudio/{instance}": {
+        "/v1/message/sendWhatsAppAudio/{instance}": {
             "post": {
                 "security": [
                     {
@@ -4210,9 +7390,292 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/v1/swagger.json": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Documentation"
+                ],
+                "summary": "Download the Swagger JSON contract",
+                "responses": {
+                    "200": {
+                        "description": "Swagger 2.0 document",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/utils.AuthenticationErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/swagger.yaml": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/yaml"
+                ],
+                "tags": [
+                    "Documentation"
+                ],
+                "summary": "Download the Swagger YAML contract",
+                "responses": {
+                    "200": {
+                        "description": "Swagger 2.0 YAML document",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/utils.AuthenticationErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/webhook/find/{instance}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "Get an instance webhook",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID",
+                        "name": "instance",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.FindWebhookResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/utils.AuthenticationErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/webhook/set/{instance}": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Enables or updates the outbound webhook target. Call signaling is emitted only when the configured events include CALL; payloads never contain media, SDP, relay data, or call keys.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "Configure an instance webhook",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID",
+                        "name": "instance",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Webhook configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.SetWebhookRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.SetWebhookResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/utils.AuthenticationErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/utils.HTTPErrorResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
+        "dto.CallActionResponse": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "example": "ok"
+                }
+            }
+        },
+        "dto.CallOfferRequest": {
+            "type": "object",
+            "required": [
+                "number"
+            ],
+            "properties": {
+                "number": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.CallOfferResponse": {
+            "type": "object",
+            "properties": {
+                "ID": {
+                    "type": "string"
+                },
+                "Recipient": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.CallSessionResponse": {
+            "type": "object",
+            "properties": {
+                "CanAnswer": {
+                    "type": "boolean"
+                },
+                "CanHangup": {
+                    "type": "boolean"
+                },
+                "CanReject": {
+                    "type": "boolean"
+                },
+                "CreatedAt": {
+                    "type": "string"
+                },
+                "Direction": {
+                    "type": "string",
+                    "enum": [
+                        "incoming",
+                        "outgoing"
+                    ]
+                },
+                "ID": {
+                    "type": "string"
+                },
+                "Media": {
+                    "type": "string",
+                    "enum": [
+                        "audio"
+                    ]
+                },
+                "Peer": {
+                    "type": "string"
+                },
+                "Reason": {
+                    "type": "string"
+                },
+                "State": {
+                    "type": "string",
+                    "enum": [
+                        "calling",
+                        "ringing",
+                        "connecting",
+                        "active",
+                        "ended",
+                        "idle"
+                    ]
+                },
+                "UpdatedAt": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.CommunityLinkGroupRequest": {
             "type": "object",
             "required": [
@@ -4228,21 +7691,7 @@ const docTemplate = `{
                 }
             }
         },
-        "dto.CommunitySetJoinApprovalModeRequest": {
-            "type": "object",
-            "required": [
-                "communityJid"
-            ],
-            "properties": {
-                "communityJid": {
-                    "type": "string"
-                },
-                "mode": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "dto.CommunitySetMemberAddModeRequest": {
+        "dto.CommunitySetAddModeRequest": {
             "type": "object",
             "required": [
                 "communityJid",
@@ -4258,6 +7707,20 @@ const docTemplate = `{
                         "admin_add",
                         "all_member_add"
                     ]
+                }
+            }
+        },
+        "dto.CommunitySetJoinApprovalModeRequest": {
+            "type": "object",
+            "required": [
+                "communityJid"
+            ],
+            "properties": {
+                "communityJid": {
+                    "type": "string"
+                },
+                "mode": {
+                    "type": "boolean"
                 }
             }
         },
@@ -4281,7 +7744,6 @@ const docTemplate = `{
                 },
                 "participants": {
                     "type": "array",
-                    "minItems": 1,
                     "items": {
                         "type": "string"
                     }
@@ -4333,19 +7795,16 @@ const docTemplate = `{
                 "readMessages": {
                     "type": "boolean"
                 },
-                "readStatus": {
-                    "type": "boolean"
-                },
                 "rejectCall": {
                     "type": "boolean"
                 },
                 "remoteJID": {
                     "type": "string"
                 },
-                "syncFullHistory": {
+                "saveMedia": {
                     "type": "boolean"
                 },
-                "syncRecentHistory": {
+                "syncFullHistory": {
                     "type": "boolean"
                 },
                 "webhook": {
@@ -4372,7 +7831,7 @@ const docTemplate = `{
                 },
                 "subject": {
                     "type": "string",
-                    "maxLength": 25,
+                    "maxLength": 100,
                     "minLength": 1
                 }
             }
@@ -4390,14 +7849,13 @@ const docTemplate = `{
                 },
                 "participants": {
                     "type": "array",
-                    "minItems": 1,
                     "items": {
                         "type": "string"
                     }
                 },
                 "subject": {
                     "type": "string",
-                    "maxLength": 25,
+                    "maxLength": 100,
                     "minLength": 1
                 }
             }
@@ -4414,7 +7872,6 @@ const docTemplate = `{
                 },
                 "participants": {
                     "type": "array",
-                    "minItems": 1,
                     "items": {
                         "type": "string"
                     }
@@ -4424,7 +7881,7 @@ const docTemplate = `{
                 },
                 "subject": {
                     "type": "string",
-                    "maxLength": 25,
+                    "maxLength": 100,
                     "minLength": 1
                 }
             }
@@ -4468,19 +7925,16 @@ const docTemplate = `{
                 "readMessages": {
                     "type": "boolean"
                 },
-                "readStatus": {
-                    "type": "boolean"
-                },
                 "rejectCall": {
                     "type": "boolean"
                 },
                 "remoteJID": {
                     "type": "string"
                 },
-                "syncFullHistory": {
+                "saveMedia": {
                     "type": "boolean"
                 },
-                "syncRecentHistory": {
+                "syncFullHistory": {
                     "type": "boolean"
                 },
                 "webhook": {
@@ -4524,19 +7978,16 @@ const docTemplate = `{
                 "readMessages": {
                     "type": "boolean"
                 },
-                "readStatus": {
-                    "type": "boolean"
-                },
                 "rejectCall": {
                     "type": "boolean"
                 },
                 "remoteJID": {
                     "type": "string"
                 },
-                "syncFullHistory": {
+                "saveMedia": {
                     "type": "boolean"
                 },
-                "syncRecentHistory": {
+                "syncFullHistory": {
                     "type": "boolean"
                 },
                 "webhook": {
@@ -4587,6 +8038,36 @@ const docTemplate = `{
                 },
                 "senderTimestamp": {
                     "type": "string"
+                }
+            }
+        },
+        "dto.FetchProfilePictureRequest": {
+            "type": "object",
+            "required": [
+                "number"
+            ],
+            "properties": {
+                "number": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.FetchProfilePictureResponse": {
+            "type": "object",
+            "properties": {
+                "profilePictureUrl": {
+                    "type": "string"
+                },
+                "wuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.FindWebhookResponse": {
+            "type": "object",
+            "properties": {
+                "webhook": {
+                    "$ref": "#/definitions/models.InstanceWebhook"
                 }
             }
         },
@@ -4653,6 +8134,25 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.GroupSetMemberAddModeRequest": {
+            "type": "object",
+            "required": [
+                "groupJid",
+                "mode"
+            ],
+            "properties": {
+                "groupJid": {
+                    "type": "string"
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": [
+                        "admin_add",
+                        "all_member_add"
+                    ]
+                }
+            }
+        },
         "dto.GroupSubjectRequest": {
             "type": "object",
             "required": [
@@ -4665,7 +8165,7 @@ const docTemplate = `{
                 },
                 "subject": {
                     "type": "string",
-                    "maxLength": 25,
+                    "maxLength": 100,
                     "minLength": 1
                 }
             }
@@ -4779,19 +8279,16 @@ const docTemplate = `{
                 "readMessages": {
                     "type": "boolean"
                 },
-                "readStatus": {
-                    "type": "boolean"
-                },
                 "rejectCall": {
                     "type": "boolean"
                 },
                 "remoteJID": {
                     "type": "string"
                 },
-                "syncFullHistory": {
+                "saveMedia": {
                     "type": "boolean"
                 },
-                "syncRecentHistory": {
+                "syncFullHistory": {
                     "type": "boolean"
                 },
                 "webhook": {
@@ -4856,10 +8353,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "creds": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
+                    "type": "object"
                 },
                 "preKeys": {
                     "type": "array",
@@ -4915,7 +8409,16 @@ const docTemplate = `{
         "dto.QuotedKey": {
             "type": "object",
             "properties": {
+                "fromMe": {
+                    "type": "boolean"
+                },
                 "id": {
+                    "type": "string"
+                },
+                "participant": {
+                    "type": "string"
+                },
+                "remoteJid": {
                     "type": "string"
                 }
             }
@@ -4953,11 +8456,40 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "played": {
+                    "description": "Played marks a voice note as heard (blue microphone) instead of merely\nread (blue ticks). Audio and PTT messages only.",
+                    "type": "boolean"
+                },
                 "remoteJid": {
                     "type": "string"
                 },
                 "sender": {
                     "description": "FromMe    bool   ` + "`" + `json:\"fromMe\"` + "`" + ` ignored",
+                    "type": "string"
+                }
+            }
+        },
+        "dto.RestartInstanceEvoCompatibility": {
+            "type": "object",
+            "properties": {
+                "instanceName": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.RestartInstanceResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "instance": {
+                    "$ref": "#/definitions/dto.RestartInstanceEvoCompatibility"
+                },
+                "state": {
                     "type": "string"
                 }
             }
@@ -5965,6 +9497,51 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.SetWebhookRequest": {
+            "type": "object",
+            "required": [
+                "webhook"
+            ],
+            "properties": {
+                "webhook": {
+                    "$ref": "#/definitions/dto.SetWebhookRequestData"
+                }
+            }
+        },
+        "dto.SetWebhookRequestData": {
+            "type": "object",
+            "properties": {
+                "base64": {
+                    "type": "boolean"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "headers": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.SetWebhookResponse": {
+            "type": "object",
+            "properties": {
+                "webhook": {
+                    "$ref": "#/definitions/models.InstanceWebhook"
+                }
+            }
+        },
         "dto.StatusInstanceResponse": {
             "type": "object",
             "properties": {
@@ -5990,9 +9567,44 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.SyncChatMessagesRequest": {
+            "type": "object",
+            "required": [
+                "id",
+                "number"
+            ],
+            "properties": {
+                "count": {
+                    "type": "integer",
+                    "maximum": 100,
+                    "minimum": 1
+                },
+                "fromMe": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "number": {
+                    "type": "string"
+                },
+                "since": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.UpdateInstanceRequest": {
             "type": "object",
             "properties": {
+                "alwaysOnline": {
+                    "type": "boolean"
+                },
+                "groupsIgnore": {
+                    "type": "boolean"
+                },
+                "msgCall": {
+                    "type": "string"
+                },
                 "proxyHost": {
                     "type": "string"
                 },
@@ -6007,6 +9619,15 @@ const docTemplate = `{
                 },
                 "proxyUsername": {
                     "type": "string"
+                },
+                "readMessages": {
+                    "type": "boolean"
+                },
+                "rejectCall": {
+                    "type": "boolean"
+                },
+                "saveMedia": {
+                    "type": "boolean"
                 },
                 "webhook": {
                     "type": "object",
@@ -6063,19 +9684,16 @@ const docTemplate = `{
                 "readMessages": {
                     "type": "boolean"
                 },
-                "readStatus": {
-                    "type": "boolean"
-                },
                 "rejectCall": {
                     "type": "boolean"
                 },
                 "remoteJID": {
                     "type": "string"
                 },
-                "syncFullHistory": {
+                "saveMedia": {
                     "type": "boolean"
                 },
-                "syncRecentHistory": {
+                "syncFullHistory": {
                     "type": "boolean"
                 },
                 "webhook": {
@@ -6083,13 +9701,74 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.UpdateMessageKey": {
+            "type": "object",
+            "required": [
+                "fromMe",
+                "id",
+                "remoteJid"
+            ],
+            "properties": {
+                "fromMe": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "participant": {
+                    "type": "string"
+                },
+                "remoteJid": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.UpdateMessageRequest": {
+            "type": "object",
+            "required": [
+                "key",
+                "number",
+                "text"
+            ],
+            "properties": {
+                "key": {
+                    "$ref": "#/definitions/dto.UpdateMessageKey"
+                },
+                "number": {
+                    "type": "string"
+                },
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.UpdateMessageResponse": {
+            "type": "object",
+            "properties": {
+                "instanceId": {
+                    "type": "string"
+                },
+                "key": {
+                    "$ref": "#/definitions/dto.MessageResponseKey"
+                },
+                "message": {
+                    "$ref": "#/definitions/dto.SendTextResponseMessage"
+                },
+                "messageTimestamp": {
+                    "type": "integer"
+                },
+                "messageType": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "models.InstanceWebhook": {
             "type": "object",
             "properties": {
                 "base64": {
-                    "type": "boolean"
-                },
-                "byEvents": {
                     "type": "boolean"
                 },
                 "enabled": {
@@ -6112,11 +9791,21 @@ const docTemplate = `{
                 }
             }
         },
+        "utils.AuthenticationErrorResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "Unauthorized"
+                }
+            }
+        },
         "utils.HTTPErrorResponse": {
             "type": "object",
             "properties": {
                 "error": {
-                    "type": "string"
+                    "description": "Error is a legacy opaque value. Go's JSON encoder does not serialize an\nerror message here, so clients should use Message and ErrorMessage.",
+                    "type": "object"
                 },
                 "errorMessage": {
                     "type": "string"
@@ -6131,6 +9820,53 @@ const docTemplate = `{
             "properties": {
                 "groupJid": {
                     "type": "string"
+                }
+            }
+        },
+        "whatsmiau.ContactMessageRaw": {
+            "type": "object",
+            "properties": {
+                "displayName": {
+                    "type": "string"
+                },
+                "vcard": {
+                    "type": "string"
+                }
+            }
+        },
+        "whatsmiau.ContactsArrayMessageRaw": {
+            "type": "object",
+            "properties": {
+                "contacts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/whatsmiau.ContactMessageRaw"
+                    }
+                },
+                "displayName": {
+                    "type": "string"
+                }
+            }
+        },
+        "whatsmiau.ContextInfoDisappearingMode": {
+            "type": "object",
+            "properties": {
+                "initiatedByMe": {
+                    "type": "boolean"
+                },
+                "initiator": {
+                    "type": "string"
+                },
+                "trigger": {
+                    "type": "string"
+                }
+            }
+        },
+        "whatsmiau.FileContextInfo": {
+            "type": "object",
+            "properties": {
+                "disappearingMode": {
+                    "$ref": "#/definitions/whatsmiau.ContextInfoDisappearingMode"
                 }
             }
         },
@@ -6162,6 +9898,9 @@ const docTemplate = `{
                 },
                 "ephemeral": {
                     "type": "integer"
+                },
+                "groupAddMode": {
+                    "type": "string"
                 },
                 "id": {
                     "type": "string"
@@ -6252,6 +9991,20 @@ const docTemplate = `{
                 }
             }
         },
+        "whatsmiau.ReactionMessageRaw": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "$ref": "#/definitions/whatsmiau.WookKey"
+                },
+                "senderTimestampMs": {
+                    "type": "string"
+                },
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
         "whatsmiau.RequestParticipantResponse": {
             "type": "object",
             "properties": {
@@ -6329,6 +10082,722 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "whatsmiau.WookAudioMessageRaw": {
+            "type": "object",
+            "properties": {
+                "contextInfo": {
+                    "$ref": "#/definitions/whatsmiau.FileContextInfo"
+                },
+                "directPath": {
+                    "type": "string"
+                },
+                "fileEncSha256": {
+                    "type": "string"
+                },
+                "fileLength": {
+                    "type": "string"
+                },
+                "fileSha256": {
+                    "type": "string"
+                },
+                "mediaKey": {
+                    "type": "string"
+                },
+                "mediaKeyTimestamp": {
+                    "type": "string"
+                },
+                "mimetype": {
+                    "type": "string"
+                },
+                "ptt": {
+                    "type": "boolean"
+                },
+                "seconds": {
+                    "type": "integer"
+                },
+                "url": {
+                    "type": "string"
+                },
+                "viewOnce": {
+                    "type": "boolean"
+                },
+                "waveform": {
+                    "type": "string"
+                }
+            }
+        },
+        "whatsmiau.WookDocumentMessageRaw": {
+            "type": "object",
+            "properties": {
+                "caption": {
+                    "type": "string"
+                },
+                "contactVcard": {
+                    "type": "boolean"
+                },
+                "directPath": {
+                    "type": "string"
+                },
+                "fileEncSha256": {
+                    "type": "string"
+                },
+                "fileLength": {
+                    "type": "string"
+                },
+                "fileName": {
+                    "type": "string"
+                },
+                "fileSha256": {
+                    "type": "string"
+                },
+                "jpegThumbnail": {
+                    "type": "string"
+                },
+                "mediaKey": {
+                    "type": "string"
+                },
+                "mediaKeyTimestamp": {
+                    "type": "string"
+                },
+                "mimetype": {
+                    "type": "string"
+                },
+                "pageCount": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "whatsmiau.WookEncCommentMessageRaw": {
+            "type": "object",
+            "properties": {
+                "encIv": {
+                    "type": "string"
+                },
+                "encPayload": {
+                    "type": "string"
+                },
+                "targetMessageKey": {
+                    "$ref": "#/definitions/whatsmiau.WookKey"
+                }
+            }
+        },
+        "whatsmiau.WookImageMessageRaw": {
+            "type": "object",
+            "properties": {
+                "caption": {
+                    "type": "string"
+                },
+                "contextInfo": {
+                    "$ref": "#/definitions/whatsmiau.FileContextInfo"
+                },
+                "directPath": {
+                    "type": "string"
+                },
+                "fileEncSha256": {
+                    "type": "string"
+                },
+                "fileLength": {
+                    "type": "string"
+                },
+                "fileSha256": {
+                    "type": "string"
+                },
+                "height": {
+                    "type": "integer"
+                },
+                "jpegThumbnail": {
+                    "type": "string"
+                },
+                "mediaKey": {
+                    "type": "string"
+                },
+                "mediaKeyTimestamp": {
+                    "type": "string"
+                },
+                "mimetype": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                },
+                "viewOnce": {
+                    "type": "boolean"
+                },
+                "width": {
+                    "type": "integer"
+                }
+            }
+        },
+        "whatsmiau.WookKey": {
+            "type": "object",
+            "properties": {
+                "addressingMode": {
+                    "type": "string"
+                },
+                "fromMe": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "participant": {
+                    "type": "string"
+                },
+                "remoteJid": {
+                    "type": "string"
+                },
+                "remoteLid": {
+                    "type": "string"
+                }
+            }
+        },
+        "whatsmiau.WookListMessageRaw": {
+            "type": "object",
+            "properties": {
+                "buttonText": {
+                    "type": "string"
+                },
+                "contextInfo": {
+                    "$ref": "#/definitions/whatsmiau.WookListMessageRawListContextInfo"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "footerText": {
+                    "type": "string"
+                },
+                "listType": {
+                    "type": "string"
+                },
+                "sections": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/whatsmiau.WookListSection"
+                    }
+                },
+                "singleSelectReply": {
+                    "$ref": "#/definitions/whatsmiau.WookListMessageRawListSingleSelectReply"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "whatsmiau.WookListMessageRawListContextInfo": {
+            "type": "object",
+            "properties": {
+                "participant": {
+                    "type": "string"
+                },
+                "quotedMessage": {
+                    "$ref": "#/definitions/whatsmiau.WookListMessageRawListContextInfoMessage"
+                },
+                "stanzaId": {
+                    "type": "string"
+                }
+            }
+        },
+        "whatsmiau.WookListMessageRawListContextInfoMessage": {
+            "type": "object",
+            "properties": {
+                "listMessage": {
+                    "$ref": "#/definitions/whatsmiau.WookListMessageRawListContextInfoMessageList"
+                }
+            }
+        },
+        "whatsmiau.WookListMessageRawListContextInfoMessageList": {
+            "type": "object",
+            "properties": {
+                "buttonText": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "footerText": {
+                    "type": "string"
+                },
+                "listType": {
+                    "type": "string"
+                },
+                "sections": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/whatsmiau.WookListSection"
+                    }
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "whatsmiau.WookListMessageRawListSingleSelectReply": {
+            "type": "object",
+            "properties": {
+                "selectedRowId": {
+                    "type": "string"
+                }
+            }
+        },
+        "whatsmiau.WookListRow": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "rowId": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "whatsmiau.WookListSection": {
+            "type": "object",
+            "properties": {
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/whatsmiau.WookListRow"
+                    }
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "whatsmiau.WookLiveLocationMessageRaw": {
+            "type": "object",
+            "properties": {
+                "accuracyInMeters": {
+                    "type": "integer"
+                },
+                "caption": {
+                    "type": "string"
+                },
+                "degreesClockwiseFromMagneticNorth": {
+                    "type": "integer"
+                },
+                "degreesLatitude": {
+                    "type": "number"
+                },
+                "degreesLongitude": {
+                    "type": "number"
+                },
+                "jpegThumbnail": {
+                    "type": "string"
+                },
+                "sequenceNumber": {
+                    "type": "integer"
+                },
+                "speedInMps": {
+                    "type": "number"
+                },
+                "timeOffset": {
+                    "type": "integer"
+                }
+            }
+        },
+        "whatsmiau.WookLocationMessageRaw": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "degreesLatitude": {
+                    "type": "number"
+                },
+                "degreesLongitude": {
+                    "type": "number"
+                },
+                "jpegThumbnail": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "whatsmiau.WookMessageContextInfo": {
+            "type": "object",
+            "properties": {
+                "conversionData": {
+                    "type": "string"
+                },
+                "conversionDelaySeconds": {
+                    "type": "integer"
+                },
+                "conversionSource": {
+                    "type": "string"
+                },
+                "disappearingMode": {
+                    "$ref": "#/definitions/whatsmiau.ContextInfoDisappearingMode"
+                },
+                "entryPointConversionApp": {
+                    "type": "string"
+                },
+                "entryPointConversionDelaySeconds": {
+                    "type": "integer"
+                },
+                "entryPointConversionSource": {
+                    "type": "string"
+                },
+                "ephemeralSettingTimestamp": {
+                    "type": "string"
+                },
+                "expiration": {
+                    "type": "integer"
+                },
+                "externalAdReply": {
+                    "$ref": "#/definitions/whatsmiau.WookMessageContextInfoExternalAdReply"
+                },
+                "mentionedJid": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "participant": {
+                    "type": "string"
+                },
+                "quotedMessage": {
+                    "$ref": "#/definitions/whatsmiau.WookMessageRaw"
+                },
+                "stanzaId": {
+                    "type": "string"
+                },
+                "trustBannerAction": {
+                    "type": "integer"
+                }
+            }
+        },
+        "whatsmiau.WookMessageContextInfoExternalAdReply": {
+            "type": "object",
+            "properties": {
+                "body": {
+                    "type": "string"
+                },
+                "containsAutoReply": {
+                    "type": "boolean"
+                },
+                "ctwaClid": {
+                    "type": "string"
+                },
+                "mediaType": {
+                    "type": "string"
+                },
+                "renderLargerThumbnail": {
+                    "type": "boolean"
+                },
+                "showAdAttribution": {
+                    "type": "boolean"
+                },
+                "sourceId": {
+                    "type": "string"
+                },
+                "sourceType": {
+                    "type": "string"
+                },
+                "sourceUrl": {
+                    "type": "string"
+                },
+                "thumbnail": {
+                    "type": "string"
+                },
+                "thumbnailUrl": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "whatsmiau.WookMessageData": {
+            "type": "object",
+            "properties": {
+                "contextInfo": {
+                    "$ref": "#/definitions/whatsmiau.WookMessageContextInfo"
+                },
+                "instanceId": {
+                    "type": "string"
+                },
+                "key": {
+                    "$ref": "#/definitions/whatsmiau.WookKey"
+                },
+                "message": {
+                    "$ref": "#/definitions/whatsmiau.WookMessageRaw"
+                },
+                "messageTimestamp": {
+                    "type": "integer"
+                },
+                "messageType": {
+                    "type": "string"
+                },
+                "pollUpdates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/whatsmiau.WookPollUpdate"
+                    }
+                },
+                "pushName": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "whatsmiau.WookMessageRaw": {
+            "type": "object",
+            "properties": {
+                "audioMessage": {
+                    "$ref": "#/definitions/whatsmiau.WookAudioMessageRaw"
+                },
+                "base64": {
+                    "type": "string"
+                },
+                "contactMessage": {
+                    "$ref": "#/definitions/whatsmiau.ContactMessageRaw"
+                },
+                "contactsArrayMessage": {
+                    "$ref": "#/definitions/whatsmiau.ContactsArrayMessageRaw"
+                },
+                "conversation": {
+                    "type": "string"
+                },
+                "documentMessage": {
+                    "$ref": "#/definitions/whatsmiau.WookDocumentMessageRaw"
+                },
+                "encCommentMessage": {
+                    "$ref": "#/definitions/whatsmiau.WookEncCommentMessageRaw"
+                },
+                "imageMessage": {
+                    "$ref": "#/definitions/whatsmiau.WookImageMessageRaw"
+                },
+                "listResponseMessage": {
+                    "$ref": "#/definitions/whatsmiau.WookListMessageRaw"
+                },
+                "liveLocationMessage": {
+                    "$ref": "#/definitions/whatsmiau.WookLiveLocationMessageRaw"
+                },
+                "locationMessage": {
+                    "$ref": "#/definitions/whatsmiau.WookLocationMessageRaw"
+                },
+                "mediaUrl": {
+                    "description": "Sent when connect with some storage",
+                    "type": "string"
+                },
+                "pollCreationMessage": {
+                    "$ref": "#/definitions/whatsmiau.WookPollCreationMessageRaw"
+                },
+                "pollUpdateMessage": {
+                    "$ref": "#/definitions/whatsmiau.WookPollUpdateMessageRaw"
+                },
+                "ptvMessage": {
+                    "$ref": "#/definitions/whatsmiau.WookPtvMessageRaw"
+                },
+                "reactionMessage": {
+                    "$ref": "#/definitions/whatsmiau.ReactionMessageRaw"
+                },
+                "stickerMessage": {
+                    "$ref": "#/definitions/whatsmiau.WookStickerMessageRaw"
+                },
+                "videoMessage": {
+                    "$ref": "#/definitions/whatsmiau.WookVideoMessageRaw"
+                }
+            }
+        },
+        "whatsmiau.WookPollCreationMessageRaw": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/whatsmiau.WookPollOption"
+                    }
+                },
+                "selectableOptionsCount": {
+                    "type": "integer"
+                }
+            }
+        },
+        "whatsmiau.WookPollOption": {
+            "type": "object",
+            "properties": {
+                "optionName": {
+                    "type": "string"
+                }
+            }
+        },
+        "whatsmiau.WookPollUpdate": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "voters": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "whatsmiau.WookPollUpdateMessageRaw": {
+            "type": "object",
+            "properties": {
+                "pollCreationMessageKey": {
+                    "$ref": "#/definitions/whatsmiau.WookKey"
+                },
+                "senderTimestampMs": {
+                    "type": "string"
+                },
+                "vote": {
+                    "$ref": "#/definitions/whatsmiau.WookPollVote"
+                }
+            }
+        },
+        "whatsmiau.WookPollVote": {
+            "type": "object",
+            "properties": {
+                "encIv": {
+                    "type": "string"
+                },
+                "encPayload": {
+                    "type": "string"
+                },
+                "selectedOptions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "whatsmiau.WookPtvMessageRaw": {
+            "type": "object",
+            "properties": {
+                "directPath": {
+                    "type": "string"
+                },
+                "fileEncSha256": {
+                    "type": "string"
+                },
+                "fileLength": {
+                    "type": "string"
+                },
+                "fileSha256": {
+                    "type": "string"
+                },
+                "jpegThumbnail": {
+                    "type": "string"
+                },
+                "mediaKey": {
+                    "type": "string"
+                },
+                "mimetype": {
+                    "type": "string"
+                },
+                "seconds": {
+                    "type": "integer"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "whatsmiau.WookStickerMessageRaw": {
+            "type": "object",
+            "properties": {
+                "directPath": {
+                    "type": "string"
+                },
+                "fileEncSha256": {
+                    "type": "string"
+                },
+                "fileLength": {
+                    "type": "string"
+                },
+                "fileSha256": {
+                    "type": "string"
+                },
+                "height": {
+                    "type": "integer"
+                },
+                "isAnimated": {
+                    "type": "boolean"
+                },
+                "mediaKey": {
+                    "type": "string"
+                },
+                "mediaKeyTimestamp": {
+                    "type": "string"
+                },
+                "mimetype": {
+                    "type": "string"
+                },
+                "pngThumbnail": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                },
+                "width": {
+                    "type": "integer"
+                }
+            }
+        },
+        "whatsmiau.WookVideoMessageRaw": {
+            "type": "object",
+            "properties": {
+                "caption": {
+                    "type": "string"
+                },
+                "fileEncSha256": {
+                    "type": "string"
+                },
+                "fileLength": {
+                    "type": "string"
+                },
+                "fileSha256": {
+                    "type": "string"
+                },
+                "gifPlayback": {
+                    "type": "boolean"
+                },
+                "jpegThumbnail": {
+                    "type": "string"
+                },
+                "mediaKey": {
+                    "type": "string"
+                },
+                "mimetype": {
+                    "type": "string"
+                },
+                "seconds": {
+                    "type": "integer"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
         }
     },
     "securityDefinitions": {
@@ -6344,10 +10813,10 @@ const docTemplate = `{
 var SwaggerInfo = &swag.Spec{
 	Version:          "0.3.2",
 	Host:             "localhost:8080",
-	BasePath:         "/v1",
-	Schemes:          []string{},
+	BasePath:         "/",
+	Schemes:          []string{"http", "https"},
 	Title:            "WhatsMiau API",
-	Description:      "WhatsMiau - WhatsApp API compatible with Evolution API. Provides instance management, messaging, and chat operations over WhatsApp Web.",
+	Description:      "Authenticated WhatsApp API compatible with Evolution API. The specification covers the complete application route surface, including canonical routes, compatibility aliases, calls and documentation delivery.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

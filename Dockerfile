@@ -1,4 +1,4 @@
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 WORKDIR /app
 
@@ -20,8 +20,6 @@ RUN apk update && apk add --no-cache ffmpeg mailcap
 WORKDIR /app
 
 COPY --from=builder /app/whatsmiau /app/whatsmiau
-COPY --from=builder /app/server/templates/ /app/server/templates/
-COPY --from=builder /app/server/static/ /app/server/static/
 
 RUN mkdir /app/data && chmod 777 -R /app/data
 

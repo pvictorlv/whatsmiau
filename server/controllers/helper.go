@@ -9,7 +9,9 @@ import (
 	"github.com/verbeux-ai/whatsmiau/lib/whatsmiau"
 	"github.com/verbeux-ai/whatsmiau/models"
 	"go.mau.fi/whatsmeow"
+	"github.com/verbeux-ai/whatsmiau/server/dto"
 	"go.mau.fi/whatsmeow/types"
+	"go.uber.org/zap"
 )
 
 // isInstanceNotConnected reports whether err means "this instance has no live
@@ -102,4 +104,35 @@ func parseProxyURL(proxyURL string) (*models.InstanceProxy, error) {
 	}
 
 	return &proxy, nil
+}
+
+// buildQuote monta a citação a partir da key e da mensagem citadas.
+//
+// O autor é o `participant` da key; numa DM a key do contato não o traz, e o
+// autor é o próprio chat (`remoteJid`). Um autor ilegível não derruba o envio:
+// a mensagem sai com a citação sem autor, em vez de não sair.
+func buildQuote(q *dto.MessageRequestQuoted) (*whatsmiau.Quote, error) {
+	if q == nil || len(q.Key.Id) == 0 {
+		return nil, nil
+	}
+
+	quote := &whatsmiau.Quote{
+		MessageID: q.Key.Id,
+		Message:   q.Message.Text(),
+	}
+
+	author := q.Key.Participant
+	if author == "" && !q.Key.FromMe {
+		author = q.Key.RemoteJid
+	}
+	if author != "" {
+		p, err := numberToJid(author)
+		if err != nil {
+			zap.L().Warn("quoted message author is not a valid JID, quoting without it",
+				zap.String("author", author), zap.Error(err))
+		} else {
+			quote.Participant = p
+		}
+	}
+	return quote, nil
 }

@@ -19,7 +19,7 @@ const (
 	WookGroupParticipantsUpdate Wook = "group-participants.update"
 	WookQRCodeUpdated           Wook = "qrcode.updated"
 	WookMessagesUndecryptable   Wook = "messages.undecryptable"
-	WookCallUpsert              Wook = "call.upsert"
+	WookCall                    Wook = "call"
 )
 
 // WookMessageUndecryptableData reports a message that arrived but could not be
@@ -35,19 +35,6 @@ type WookMessageUndecryptableData struct {
 	IsGroup          bool     `json:"isGroup,omitempty"`
 	MessageTimestamp int      `json:"messageTimestamp,omitempty"`
 	InstanceId       string   `json:"instanceId,omitempty"`
-}
-
-// WookCallData reports incoming call activity so consumers can react (reject,
-// auto-reply, log) instead of the call being invisible.
-type WookCallData struct {
-	Id         string `json:"id,omitempty"`
-	From       string `json:"from,omitempty"`
-	FromLid    string `json:"fromLid,omitempty"`
-	Status     string `json:"status,omitempty"`
-	IsVideo    bool   `json:"isVideo,omitempty"`
-	IsGroup    bool   `json:"isGroup,omitempty"`
-	Timestamp  int    `json:"timestamp,omitempty"`
-	InstanceId string `json:"instanceId,omitempty"`
 }
 
 type WookEvent[data any] struct {
@@ -171,7 +158,7 @@ type ContactsArrayMessageRaw struct {
 type ContactMessageRaw struct {
 	VCard        string     `json:"vcard,omitempty"`
 	DisplayName  string     `json:"displayName,omitempty"`
-	DecodedVcard vcard.Card `json:"decodedVcard,omitempty"`
+	DecodedVcard vcard.Card `json:"decodedVcard,omitempty" swaggerignore:"true"`
 }
 
 type WookListMessageRaw struct {
@@ -370,6 +357,24 @@ type WookQRCodeUpdateData struct {
 	Instance   string      `json:"instance,omitempty"`
 	StatusCode int         `json:"statusCode,omitempty"`
 	QRCode     *WookQRCode `json:"qrcode,omitempty"`
+}
+
+// WookCallData contains call signaling metadata only. It intentionally omits
+// binary call nodes, session keys and media data.
+type WookCallData struct {
+	CallID            string `json:"callId,omitempty"`
+	From              string `json:"from,omitempty"`
+	CallCreator       string `json:"callCreator,omitempty"`
+	CallCreatorAlt    string `json:"callCreatorAlt,omitempty"`
+	GroupJID          string `json:"groupJid,omitempty"`
+	Status            string `json:"status,omitempty"`
+	Media             string `json:"media,omitempty"`
+	IsVideo           *bool  `json:"isVideo,omitempty"`
+	IsGroup           bool   `json:"isGroup,omitempty"`
+	RemotePlatform    string `json:"remotePlatform,omitempty"`
+	RemoteVersion     string `json:"remoteVersion,omitempty"`
+	Reason            string `json:"reason,omitempty"`
+	RTCMediaAvailable bool   `json:"rtcMediaAvailable"`
 }
 
 type WookGroupParticipantsUpdateData struct {
