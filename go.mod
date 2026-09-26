@@ -123,4 +123,4 @@ require (
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 
-replace go.mau.fi/whatsmeow => ../whatsmeow
+replace go.mau.fi/whatsmeow => github.com/pvictorlv/whatsmeow v0.0.0-20260926024341-eddea1d5d620
