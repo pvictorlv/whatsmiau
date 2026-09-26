@@ -167,7 +167,7 @@ func (s *Whatsmiau) SyncChatMessages(ctx context.Context, req *SyncChatMessagesR
 					continue
 				}
 
-				md := s.buildMessageDataFromHistory(hsm.Message, conv.GetName(), conv.GetDisplayName())
+				md := s.buildMessageDataFromHistory(ctx, req.InstanceID, hsm.Message, conv.GetName(), conv.GetDisplayName())
 				if md == nil {
 					continue
 				}

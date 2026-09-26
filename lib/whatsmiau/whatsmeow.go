@@ -331,7 +331,7 @@ func (s *Whatsmiau) resetIfConnectMethodChanged(ctx context.Context, id, phoneNu
 	if err := s.deleteDeviceIfExists(ctx, client); err != nil {
 		zap.L().Error("failed to delete device on method change", zap.String("id", id), zap.Error(err))
 	}
-	s.clients.Delete(id)
+	s.deleteClient(id)
 	s.qrCache.Delete(id)
 	s.pairingCache.Delete(id)
 	s.observerRunning.Delete(id)

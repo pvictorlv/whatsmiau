@@ -48,11 +48,24 @@ func TestPickResolvedJID(t *testing.T) {
 			want: pn("5591992830619"),
 		},
 		{
-			name: "LID only, no PhoneNumber: keeps the original number",
+			name: "LID only, no PhoneNumber: sends to the LID",
 			resp: []types.IsOnWhatsAppResponse{{
 				IsIn: true,
 				JID:  lid("247695209967637"),
 			}},
+			want: lid("247695209967637"),
+		},
+		{
+			name: "LID with device part: drops the device",
+			resp: []types.IsOnWhatsAppResponse{{
+				IsIn: true,
+				JID:  types.NewADJID("247695209967637", types.LIDDomain, 2),
+			}},
+			want: lid("247695209967637"),
+		},
+		{
+			name: "registered but empty JID: keeps the original number",
+			resp: []types.IsOnWhatsAppResponse{{IsIn: true, JID: types.EmptyJID}},
 			want: original,
 		},
 		{

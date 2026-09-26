@@ -250,6 +250,8 @@ func TestMessageDeleteWebhookUsesDeleteSubscription(t *testing.T) {
 	}
 }
 
+// Recibo do contato: um evento por mensagem. Recibo com IsFromMe (a própria
+// conta lendo) é descartado — ver receipt_status_test.go.
 func TestReceiptWebhookEmitsEachMessageUpdate(t *testing.T) {
 	service := &Whatsmiau{
 		clients: xsync.NewMap[string, *whatsmeow.Client](),
@@ -267,8 +269,8 @@ func TestReceiptWebhookEmitsEachMessageUpdate(t *testing.T) {
 	event := &events.Receipt{
 		MessageSource: types.MessageSource{
 			Chat:     types.NewJID("5511999999999", types.DefaultUserServer),
-			Sender:   types.NewJID("5511888888888", types.DefaultUserServer),
-			IsFromMe: true,
+			Sender:   types.NewJID("5511999999999", types.DefaultUserServer),
+			IsFromMe: false,
 		},
 		MessageIDs: []types.MessageID{"message-1", "message-2"},
 		Timestamp:  timestamp,
@@ -287,7 +289,7 @@ func TestReceiptWebhookEmitsEachMessageUpdate(t *testing.T) {
 			if payload.Event != WookMessagesUpdate || !payload.DateTime.Equal(timestamp) {
 				t.Fatalf("unexpected webhook envelope: %+v", payload)
 			}
-			if payload.Data.MessageId != expectedID || payload.Data.Status != MessageStatusRead || !payload.Data.FromMe {
+			if payload.Data.MessageId != expectedID || payload.Data.Status != MessageStatusRead {
 				t.Fatalf("unexpected update payload: %+v", payload.Data)
 			}
 		case <-time.After(time.Second):

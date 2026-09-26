@@ -151,8 +151,12 @@ func pickResolvedJID(original types.JID, resp []types.IsOnWhatsAppResponse) type
 			return item.JID.ToNonAD()
 		}
 
-		// Só veio LID: mantém o número original e deixa o whatsmeow mapear.
-		return original
+		// Só veio LID: ele é um destino válido. Voltar ao número digitado
+		// falhava quando era a variante errada do 9º dígito — o whatsmeow não
+		// acha LID para um telefone que não existe.
+		if item.JID.Server == types.HiddenUserServer {
+			return item.JID.ToNonAD()
+		}
 	}
 
 	return original
@@ -208,7 +212,7 @@ func (s *Whatsmiau) FetchProfilePictureURL(ctx context.Context, instanceID strin
 		return "", fmt.Errorf("client not connected")
 	}
 
-	pic, err := client.GetProfilePictureInfo(ctx, jid, &whatsmeow.GetProfilePictureParams{Preview: false})
+	pic, err := client.GetProfilePictureInfo(ctx, jid.ToNonAD(), &whatsmeow.GetProfilePictureParams{Preview: false})
 	if errors.Is(err, whatsmeow.ErrProfilePictureNotSet) || errors.Is(err, whatsmeow.ErrProfilePictureUnauthorized) {
 		return "", nil
 	}

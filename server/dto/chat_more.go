@@ -14,27 +14,6 @@ type FetchProfileRequest struct {
 	Number     string `json:"number" validate:"required"`
 }
 
-// FetchProfilePictureUrlResponse é o retorno do /chat/fetchProfilePictureUrl.
-// O CRM lê o campo profilePictureUrl.
-type FetchProfilePictureUrlResponse struct {
-	Wuid              string `json:"wuid,omitempty"`
-	ProfilePictureUrl string `json:"profilePictureUrl,omitempty"`
-}
-
-// UpdateMessageRequest espelha o corpo do /chat/updateMessage (edição) da Evolution.
-type UpdateMessageRequest struct {
-	InstanceID string             `param:"instance" validate:"required"`
-	Number     string             `json:"number" validate:"required"`
-	Text       string             `json:"text" validate:"required"`
-	Key        UpdateMessageKey   `json:"key" validate:"required"`
-}
-
-type UpdateMessageKey struct {
-	Id        string `json:"id" validate:"required"`
-	FromMe    bool   `json:"fromMe"`
-	RemoteJid string `json:"remoteJid,omitempty"`
-}
-
 // SetPresenceRequest espelha o corpo do /instance/setPresence da Evolution.
 type SetPresenceRequest struct {
 	InstanceID string `param:"instance" validate:"required"`

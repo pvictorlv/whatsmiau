@@ -457,7 +457,7 @@ func (s *Whatsmiau) handleMessageEvent(id string, instance *models.Instance, e *
 // be decrypted. whatsmeow has already exhausted its retry receipts by this
 // point; without this handler the message is lost with no trace at all, which
 // is what made past "lost message" incidents impossible to diagnose.
-func (s *Whatsmiau) handleUndecryptableMessageEvent(id string, instance *models.Instance, e *events.UndecryptableMessage, eventMap map[string]bool) {
+func (s *Whatsmiau) handleUndecryptableMessageEvent(id string, instance *models.Instance, e *events.UndecryptableMessage, eventMap map[webhookConfigEvent]bool) {
 	ctx, c := context.WithTimeout(context.Background(), time.Second*10)
 	defer c()
 
@@ -476,7 +476,7 @@ func (s *Whatsmiau) handleUndecryptableMessageEvent(id string, instance *models.
 		zap.String("decrypt_fail_mode", string(e.DecryptFailMode)),
 		zap.Time("timestamp", e.Info.Timestamp))
 
-	if !eventMap["MESSAGES_UNDECRYPTABLE"] {
+	if !eventMap[webhookConfigMessagesUndecryptable] {
 		return
 	}
 
@@ -971,11 +971,7 @@ func (s *Whatsmiau) emitQRCodeUpdated(id, code, pairingCode string) {
 		return
 	}
 
-	eventMap := make(map[string]bool)
-	for _, evt := range instance.Webhook.Events {
-		eventMap[evt] = true
-	}
-	if !eventMap["QRCODE_UPDATED"] {
+	if !webhookEventMap(instance.Webhook.Events)[webhookConfigQRCodeUpdated] {
 		return
 	}
 

@@ -13,6 +13,8 @@ const (
 	webhookConfigGroupParticipantsUpdate webhookConfigEvent = "GROUP_PARTICIPANTS_UPDATE"
 	webhookConfigConnectionUpdate        webhookConfigEvent = "CONNECTION_UPDATE"
 	webhookConfigCall                    webhookConfigEvent = "CALL"
+	webhookConfigMessagesUndecryptable   webhookConfigEvent = "MESSAGES_UNDECRYPTABLE"
+	webhookConfigQRCodeUpdated           webhookConfigEvent = "QRCODE_UPDATED"
 )
 
 var webhookConfigEventReplacer = strings.NewReplacer(".", "_", "-", "_")

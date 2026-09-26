@@ -5,11 +5,9 @@ import (
 	"time"
 
 	"go.mau.fi/whatsmeow"
-	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	"golang.org/x/net/context"
-	"google.golang.org/protobuf/proto"
 )
 
 // UpdateBlockStatus bloqueia ou desbloqueia um contato (compatível com
@@ -43,22 +41,6 @@ func (s *Whatsmiau) SetPresence(ctx context.Context, instanceID string, availabl
 	}
 
 	return client.SendPresence(ctx, state)
-}
-
-// EditMessage edita o texto de uma mensagem já enviada (compatível com
-// /chat/updateMessage da Evolution API).
-func (s *Whatsmiau) EditMessage(ctx context.Context, instanceID string, chat types.JID, messageID, newText string) (whatsmeow.SendResponse, error) {
-	client, ok := s.clients.Load(instanceID)
-	if !ok {
-		return whatsmeow.SendResponse{}, whatsmeow.ErrClientIsNil
-	}
-
-	resolved := s.resolveJID(ctx, client, chat)
-	edited := client.BuildEdit(resolved, types.MessageID(messageID), &waE2E.Message{
-		Conversation: proto.String(newText),
-	})
-
-	return client.SendMessage(ctx, resolved, edited)
 }
 
 // ProfileInfo espelha o retorno do /chat/fetchProfile da Evolution API.
@@ -125,24 +107,6 @@ func (s *Whatsmiau) FetchProfile(ctx context.Context, instanceID string, jid typ
 	}
 
 	return info, nil
-}
-
-// FetchProfilePictureURL retorna a URL da foto de perfil (full-res) de um contato.
-func (s *Whatsmiau) FetchProfilePictureURL(ctx context.Context, instanceID string, jid types.JID) (string, error) {
-	client, ok := s.clients.Load(instanceID)
-	if !ok {
-		return "", whatsmeow.ErrClientIsNil
-	}
-
-	pic, err := client.GetProfilePictureInfo(ctx, jid.ToNonAD(), &whatsmeow.GetProfilePictureParams{Preview: false})
-	if err != nil {
-		return "", err
-	}
-	if pic == nil {
-		return "", nil
-	}
-
-	return pic.URL, nil
 }
 
 // ErrDeviceNotConnected sinaliza que a instância existe mas não tem sessão

@@ -56,16 +56,18 @@ type DeleteMessageForEveryoneRequest struct {
 // payload: the destination number, the new text and the key of the message
 // being edited.
 type UpdateMessageRequest struct {
-	InstanceID string            `param:"instance" validate:"required" swaggerignore:"true"`
-	Number     string            `json:"number" validate:"required"`
-	Text       string            `json:"text" validate:"required"`
-	Key        UpdateMessageKey  `json:"key" validate:"required"`
+	InstanceID string           `param:"instance" validate:"required" swaggerignore:"true"`
+	Number     string           `json:"number" validate:"required"`
+	Text       string           `json:"text" validate:"required"`
+	Key        UpdateMessageKey `json:"key" validate:"required"`
 }
 
 type UpdateMessageKey struct {
-	Id          string `json:"id" validate:"required"`
-	RemoteJid   string `json:"remoteJid" validate:"required"`
-	FromMe      *bool  `json:"fromMe" validate:"required"`
+	Id string `json:"id" validate:"required"`
+	// Opcionais: o CRM reenvia a key guardada da mensagem, e o `fromMe: false`
+	// some no omitempty. Exigir os dois recusava edições válidas.
+	RemoteJid   string `json:"remoteJid,omitempty"`
+	FromMe      *bool  `json:"fromMe,omitempty"`
 	Participant string `json:"participant,omitempty"`
 }
 

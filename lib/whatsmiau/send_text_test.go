@@ -6,8 +6,8 @@ import (
 	"go.mau.fi/whatsmeow/types"
 )
 
-func TestBuildTextMessagePlain(t *testing.T) {
-	msg := buildTextMessage("oi", nil)
+func TestBuildSendTextMessagePlain(t *testing.T) {
+	msg := buildSendTextMessage(&SendText{Text: "oi"}, nil, false)
 
 	if msg.GetConversation() != "oi" {
 		t.Fatalf("conversation = %q, want %q", msg.GetConversation(), "oi")
@@ -19,9 +19,12 @@ func TestBuildTextMessagePlain(t *testing.T) {
 
 // Regressão: a citação saía com `Conversation` + ExtendedTextMessage vazio, e o
 // app do celular mostrava a mensagem em branco.
-func TestBuildTextMessageQuoted(t *testing.T) {
+func TestBuildSendTextMessageQuoted(t *testing.T) {
 	sender := types.NewJID("559281358585", types.DefaultUserServer)
-	msg := buildTextMessage("resposta", &textQuote{ID: "A5C6E2C8", Text: "pergunta", Sender: sender})
+	msg := buildSendTextMessage(&SendText{
+		Text:  "resposta",
+		Quote: &Quote{MessageID: "A5C6E2C8", Message: "pergunta", Participant: &sender},
+	}, nil, false)
 
 	if msg.Conversation != nil {
 		t.Fatal("quoted text must not set Conversation")
