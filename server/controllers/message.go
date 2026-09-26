@@ -68,9 +68,13 @@ func (s *Message) SendText(ctx echo.Context) error {
 		RemoteJID:  jid,
 	}
 
-	if request.Quoted != nil && len(request.Quoted.Key.Id) > 0 && len(request.Quoted.Message.Conversation) > 0 {
-		sendText.QuoteMessage = request.Quoted.Message.Conversation
-		sendText.QuoteMessageID = request.Quoted.Key.Id
+	if q := request.Quoted; q != nil && len(q.Key.Id) > 0 && len(q.Message.Text()) > 0 {
+		sendText.QuoteMessage = q.Message.Text()
+		sendText.QuoteMessageID = q.Key.Id
+		sendText.QuoteFromMe = q.Key.FromMe
+		if p, err := types.ParseJID(q.Key.Participant); err == nil && !p.IsEmpty() && p.Server != "" {
+			sendText.Participant = &p
+		}
 	}
 
 	c := ctx.Request().Context()

@@ -17,11 +17,31 @@ type MessageRequestQuoted struct {
 }
 
 type QuotedKey struct {
-	Id string `json:"id,omitempty"`
+	Id          string `json:"id,omitempty"`
+	RemoteJid   string `json:"remoteJid,omitempty"`
+	FromMe      bool   `json:"fromMe,omitempty"`
+	Participant string `json:"participant,omitempty"`
 }
 
 type QuotedMessage struct {
-	Conversation string `json:"conversation,omitempty"`
+	Conversation        string                    `json:"conversation,omitempty"`
+	ExtendedTextMessage *QuotedExtendedTextMessage `json:"extendedTextMessage,omitempty"`
+}
+
+type QuotedExtendedTextMessage struct {
+	Text string `json:"text,omitempty"`
+}
+
+// Text é o texto da mensagem citada, esteja ele em `conversation` ou em
+// `extendedTextMessage` (mensagem com link, resposta a outra etc.).
+func (m QuotedMessage) Text() string {
+	if m.Conversation != "" {
+		return m.Conversation
+	}
+	if m.ExtendedTextMessage != nil {
+		return m.ExtendedTextMessage.Text
+	}
+	return ""
 }
 
 type MessageResponseKey struct {

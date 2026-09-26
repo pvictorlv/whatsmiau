@@ -20,7 +20,36 @@ type SendText struct {
 	RemoteJID      *types.JID `json:"remote_jid"`
 	QuoteMessageID string     `json:"quote_message_id"`
 	QuoteMessage   string     `json:"quote_message"`
-	Participant    *types.JID `json:"participant"`
+	QuoteFromMe    bool       `json:"quote_from_me"`
+	// Autor da mensagem citada; vazio numa DM = o próprio contato.
+	Participant *types.JID `json:"participant"`
+}
+
+type textQuote struct {
+	ID     string
+	Text   string
+	Sender types.JID
+}
+
+// buildTextMessage monta o texto, com ou sem citação. Citação só existe em
+// ExtendedTextMessage, e o texto tem de ir NELE: mandar `Conversation` junto
+// de um ExtendedTextMessage deixa a mensagem em branco no app do celular,
+// embora o envio conste como feito.
+func buildTextMessage(text string, quote *textQuote) *waE2E.Message {
+	if quote == nil {
+		return &waE2E.Message{Conversation: proto.String(text)}
+	}
+
+	return &waE2E.Message{
+		ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+			Text: proto.String(text),
+			ContextInfo: &waE2E.ContextInfo{
+				StanzaID:      proto.String(quote.ID),
+				Participant:   proto.String(quote.Sender.String()),
+				QuotedMessage: &waE2E.Message{Conversation: proto.String(quote.Text)},
+			},
+		},
+	}
 }
 
 type SendTextResponse struct {
@@ -41,32 +70,20 @@ func (s *Whatsmiau) SendText(ctx context.Context, data *SendText) (*SendTextResp
 	resolved := s.resolveJID(ctx, client, *data.RemoteJID)
 	data.RemoteJID = &resolved
 
-	//rJid := data.RemoteJID.ToNonAD().String()
-	var extendedMessage *waE2E.ExtendedTextMessage
+	var quote *textQuote
 	if len(data.QuoteMessage) > 0 && len(data.QuoteMessageID) > 0 {
-		extendedMessage = &waE2E.ExtendedTextMessage{
-			//ContextInfo: &waE2E.ContextInfo{ // TODO: implement quoted message
-			//	StanzaID:    &data.QuoteMessageID,
-			//	Participant: &rJid,
-			//	QuotedMessage: &waE2E.Message{
-			//		Conversation: &data.QuoteMessage,
-			//		ProtocolMessage: &waE2E.ProtocolMessage{
-			//			Key: &waCommon.MessageKey{
-			//				RemoteJID:   &rJid,
-			//				FromMe:      &[]bool{true}[0],
-			//				ID:          &data.QuoteMessageID,
-			//				Participant: nil,
-			//			},
-			//		},
-			//	},
-			//},
+		quote = &textQuote{ID: data.QuoteMessageID, Text: data.QuoteMessage}
+		switch {
+		case data.QuoteFromMe && client.Store.ID != nil:
+			quote.Sender = client.Store.ID.ToNonAD()
+		case data.Participant != nil && !data.Participant.IsEmpty():
+			quote.Sender = data.Participant.ToNonAD()
+		default:
+			quote.Sender = data.RemoteJID.ToNonAD()
 		}
 	}
 
-	res, err := client.SendMessage(ctx, *data.RemoteJID, &waE2E.Message{
-		Conversation:        &data.Text,
-		ExtendedTextMessage: extendedMessage,
-	})
+	res, err := client.SendMessage(ctx, *data.RemoteJID, buildTextMessage(data.Text, quote))
 	if err != nil {
 		return nil, err
 	}
