@@ -37,6 +37,7 @@ func (s *Whatsmiau) SendVideo(ctx context.Context, data *SendVideoRequest) (*Sen
 		return nil, err
 	}
 	data.RemoteJID = &resolved
+	data.Quote = s.quoteForChat(ctx, client, resolved, data.Quote)
 
 	mentioned, everyone, err := s.resolveMentions(resolved, data.MentionsEveryOne, data.Mentioned)
 	if err != nil {
@@ -103,6 +104,7 @@ func (s *Whatsmiau) SendPtv(ctx context.Context, data *SendPtvRequest) (*SendPtv
 		return nil, err
 	}
 	data.RemoteJID = &resolved
+	data.Quote = s.quoteForChat(ctx, client, resolved, data.Quote)
 
 	mentioned, everyone, err := s.resolveMentions(resolved, data.MentionsEveryOne, data.Mentioned)
 	if err != nil {
@@ -162,6 +164,7 @@ func (s *Whatsmiau) SendSticker(ctx context.Context, data *SendStickerRequest) (
 		return nil, err
 	}
 	data.RemoteJID = &resolved
+	data.Quote = s.quoteForChat(ctx, client, resolved, data.Quote)
 
 	mentioned, everyone, err := s.resolveMentions(resolved, data.MentionsEveryOne, data.Mentioned)
 	if err != nil {
@@ -223,6 +226,7 @@ func (s *Whatsmiau) SendLocation(ctx context.Context, data *SendLocationRequest)
 		return nil, err
 	}
 	data.RemoteJID = &resolved
+	data.Quote = s.quoteForChat(ctx, client, resolved, data.Quote)
 
 	mentioned, everyone, err := s.resolveMentions(resolved, data.MentionsEveryOne, data.Mentioned)
 	if err != nil {
@@ -291,6 +295,7 @@ func (s *Whatsmiau) SendContact(ctx context.Context, data *SendContactRequest) (
 		return nil, err
 	}
 	data.RemoteJID = &resolved
+	data.Quote = s.quoteForChat(ctx, client, resolved, data.Quote)
 
 	mentioned, everyone, err := s.resolveMentions(resolved, data.MentionsEveryOne, data.Mentioned)
 	if err != nil {
@@ -352,6 +357,7 @@ func (s *Whatsmiau) SendPoll(ctx context.Context, data *SendPollRequest) (*SendP
 		return nil, err
 	}
 	data.RemoteJID = &resolved
+	data.Quote = s.quoteForChat(ctx, client, resolved, data.Quote)
 
 	mentioned, everyone, err := s.resolveMentions(resolved, data.MentionsEveryOne, data.Mentioned)
 	if err != nil {

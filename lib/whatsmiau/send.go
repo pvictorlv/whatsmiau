@@ -50,6 +50,7 @@ func (s *Whatsmiau) SendText(ctx context.Context, data *SendText) (*SendTextResp
 
 	resolved := s.resolveJID(ctx, client, *data.RemoteJID)
 	data.RemoteJID = &resolved
+	data.Quote = s.quoteForChat(ctx, client, resolved, data.Quote)
 
 	mentioned, everyone, err := s.resolveMentions(resolved, data.MentionsEveryOne, data.Mentioned)
 	if err != nil {
@@ -293,6 +294,7 @@ func (s *Whatsmiau) SendAudio(ctx context.Context, data *SendAudioRequest) (*Sen
 
 	resolved := s.resolveJID(ctx, client, *data.RemoteJID)
 	data.RemoteJID = &resolved
+	data.Quote = s.quoteForChat(ctx, client, resolved, data.Quote)
 
 	mentioned, everyone, err := s.resolveMentions(resolved, data.MentionsEveryOne, data.Mentioned)
 	if err != nil {
@@ -369,6 +371,7 @@ func (s *Whatsmiau) SendDocument(ctx context.Context, data *SendDocumentRequest)
 
 	resolved := s.resolveJID(ctx, client, *data.RemoteJID)
 	data.RemoteJID = &resolved
+	data.Quote = s.quoteForChat(ctx, client, resolved, data.Quote)
 
 	mentioned, everyone, err := s.resolveMentions(resolved, data.MentionsEveryOne, data.Mentioned)
 	if err != nil {
@@ -442,6 +445,7 @@ func (s *Whatsmiau) SendImage(ctx context.Context, data *SendImageRequest) (*Sen
 
 	resolved := s.resolveJID(ctx, client, *data.RemoteJID)
 	data.RemoteJID = &resolved
+	data.Quote = s.quoteForChat(ctx, client, resolved, data.Quote)
 
 	mentioned, everyone, err := s.resolveMentions(resolved, data.MentionsEveryOne, data.Mentioned)
 	if err != nil {

@@ -3,6 +3,7 @@ package whatsmiau
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.mau.fi/whatsmeow"
@@ -137,29 +138,63 @@ func (s *Whatsmiau) resolveJID(ctx context.Context, client *whatsmeow.Client, ji
 // O telefone canônico é `item.PhoneNumber`. O LID quem resolve é o whatsmeow, a
 // partir do PN, na hora de enviar.
 func pickResolvedJID(original types.JID, resp []types.IsOnWhatsAppResponse) types.JID {
+	// Número já cadastrado no WhatsApp é o destino, mesmo que a variante com/sem
+	// o 9º dígito também exista (são contas diferentes). A ordem da resposta não
+	// é garantida, então preferir a variante digitada em vez da primeira que
+	// voltou evita mandar para outra pessoa (e abrir um ticket novo no CRM).
+	for _, item := range resp {
+		if item.IsIn && queriedNumber(item.Query) == original.User {
+			if jid, ok := destinationOf(item); ok {
+				return jid
+			}
+		}
+	}
+
 	for _, item := range resp {
 		if !item.IsIn {
 			continue
 		}
-
-		if !item.PhoneNumber.IsEmpty() && item.PhoneNumber.Server == types.DefaultUserServer {
-			return item.PhoneNumber.ToNonAD()
-		}
-
-		// Respostas antigas não trazem PhoneNumber: ali o próprio JID é o PN.
-		if item.JID.Server == types.DefaultUserServer {
-			return item.JID.ToNonAD()
-		}
-
-		// Só veio LID: ele é um destino válido. Voltar ao número digitado
-		// falhava quando era a variante errada do 9º dígito — o whatsmeow não
-		// acha LID para um telefone que não existe.
-		if item.JID.Server == types.HiddenUserServer {
-			return item.JID.ToNonAD()
+		if jid, ok := destinationOf(item); ok {
+			return jid
 		}
 	}
 
 	return original
+}
+
+// queriedNumber normaliza o Query devolvido pelo IsOnWhatsApp (pode vir com "+"
+// ou sufixo de servidor) para só dígitos, comparável a JID.User.
+func queriedNumber(query string) string {
+	if at := strings.IndexByte(query, '@'); at >= 0 {
+		query = query[:at]
+	}
+	return strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, query)
+}
+
+// destinationOf extrai o destino de envio de um item registrado do IsOnWhatsApp.
+func destinationOf(item types.IsOnWhatsAppResponse) (types.JID, bool) {
+	if !item.PhoneNumber.IsEmpty() && item.PhoneNumber.Server == types.DefaultUserServer {
+		return item.PhoneNumber.ToNonAD(), true
+	}
+
+	// Respostas antigas não trazem PhoneNumber: ali o próprio JID é o PN.
+	if item.JID.Server == types.DefaultUserServer {
+		return item.JID.ToNonAD(), true
+	}
+
+	// Só veio LID: ele é um destino válido. Voltar ao número digitado
+	// falhava quando era a variante errada do 9º dígito — o whatsmeow não
+	// acha LID para um telefone que não existe.
+	if item.JID.Server == types.HiddenUserServer {
+		return item.JID.ToNonAD(), true
+	}
+
+	return types.EmptyJID, false
 }
 
 type DeleteMessageForEveryoneRequest struct {

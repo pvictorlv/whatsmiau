@@ -382,6 +382,8 @@ func (s *Whatsmiau) handleLoggedOut(id string) {
 	proxypool.Release(id)
 }
 func (s *Whatsmiau) handleMessageEvent(id string, instance *models.Instance, e *events.Message, eventMap map[webhookConfigEvent]bool) {
+	e = s.unwrapSecretEdit(id, e)
+
 	if e.Message != nil {
 		if pm := e.Message.GetProtocolMessage(); pm != nil {
 			switch pm.GetType() {

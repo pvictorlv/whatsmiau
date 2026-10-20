@@ -106,3 +106,34 @@ func TestPickResolvedJID(t *testing.T) {
 		})
 	}
 }
+
+// Regression: a Unimed tem o fixo 11 5192-6625 e outra conta no mesmo número com
+// o 9 (11 95192-6625). Quando as duas existem, a resposta pode trazer a variante
+// com 9 primeiro; o envio tem que continuar indo para o número que o contato já
+// usa, não para a "irmã".
+func TestPickResolvedJIDPrefersTypedNumberWhenBothVariantsExist(t *testing.T) {
+	original := pn("551151926625")
+
+	resp := []types.IsOnWhatsAppResponse{
+		{Query: "5511951926625", IsIn: true, JID: lid("111111111111111"), PhoneNumber: pn("5511951926625")},
+		{Query: "551151926625", IsIn: true, JID: lid("222222222222222"), PhoneNumber: pn("551151926625")},
+	}
+
+	if got := pickResolvedJID(original, resp); got != original {
+		t.Fatalf("pickResolvedJID() = %s, want %s", got, original)
+	}
+}
+
+func TestPickResolvedJIDMovesToAlternateWhenTypedNumberIsNotRegistered(t *testing.T) {
+	original := pn("559192830619")
+
+	resp := []types.IsOnWhatsAppResponse{
+		{Query: "559192830619", IsIn: false},
+		{Query: "5591992830619", IsIn: true, JID: lid("247695209967637"), PhoneNumber: pn("5591992830619")},
+	}
+
+	want := pn("5591992830619")
+	if got := pickResolvedJID(original, resp); got != want {
+		t.Fatalf("pickResolvedJID() = %s, want %s", got, want)
+	}
+}
