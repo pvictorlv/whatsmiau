@@ -40,6 +40,7 @@ type Whatsmiau struct {
 	qrCache            *xsync.Map[string, string]
 	pairingCache       *xsync.Map[string, string]
 	observerRunning    *xsync.Map[string, *whatsmeow.Client]
+	observerCancel     *xsync.Map[string, context.CancelFunc]
 	instanceCache      *xsync.Map[string, models.Instance]
 	lockConnection     *xsync.Map[string, *sync.Mutex]
 	connectPhoneNumber *xsync.Map[string, string]
@@ -212,6 +213,7 @@ func LoadMiau(ctx context.Context, container *sqlstore.Container) {
 		pairingCache:       xsync.NewMap[string, string](),
 		instanceCache:      xsync.NewMap[string, models.Instance](),
 		observerRunning:    xsync.NewMap[string, *whatsmeow.Client](),
+		observerCancel:     xsync.NewMap[string, context.CancelFunc](),
 		lockConnection:     xsync.NewMap[string, *sync.Mutex](),
 		connectPhoneNumber: xsync.NewMap[string, string](),
 		emitter:            make(chan emitter, env.Env.EmitterBufferSize),
@@ -325,8 +327,11 @@ func (s *Whatsmiau) resetIfConnectMethodChanged(ctx context.Context, id, phoneNu
 		zap.Bool("current_has_number", phoneNumber != ""),
 	)
 
-	// Closing the client also closes its QR channel, which unblocks the
-	// observer goroutine and lets its deferred cleanup run.
+	// A manual Disconnect emits no event, so the QR channel stays open: only
+	// cancelling the context ends the observer of this attempt.
+	if cancel, ok := s.observerCancel.LoadAndDelete(id); ok {
+		cancel()
+	}
 	client.Disconnect()
 	if err := s.deleteDeviceIfExists(ctx, client); err != nil {
 		zap.L().Error("failed to delete device on method change", zap.String("id", id), zap.Error(err))
@@ -497,12 +502,15 @@ func (s *Whatsmiau) observeConnection(client *whatsmeow.Client, id string, phone
 		zap.L().Debug("stopping observer connection", zap.String("id", id))
 		if currentClient, ok := s.observerRunning.Load(id); ok && currentClient == client {
 			s.observerRunning.Delete(id)
+			s.observerCancel.Delete(id)
 			s.qrCache.Delete(id)
 			s.pairingCache.Delete(id)
 		}
 	}()
 
 	ctx, cancel := context.WithTimeout(context.TODO(), time.Minute*2)
+	defer cancel()
+	s.observerCancel.Store(id, cancel)
 	qrChan, err := client.GetQRChannel(ctx)
 	if err != nil {
 		zap.L().Error("failed to observe QR Code", zap.Error(err))
@@ -528,10 +536,7 @@ func (s *Whatsmiau) observeConnection(client *whatsmeow.Client, id string, phone
 		select {
 		case <-ctx.Done(): // QR code expiration
 			zap.L().Debug("context ", zap.String("id", id), zap.Error(ctx.Err()))
-			if err := s.deleteDeviceIfExists(context.TODO(), client); err != nil {
-				zap.L().Error("failed to hard logout", zap.String("id", id), zap.Error(err))
-			}
-			s.deleteClient(id)
+			s.discardExpiredAttempt(id, client)
 			return
 		case evt, ok := <-qrChan:
 			if !ok || evt.Event == "error" || evt.Event == "timeout" { // closed qr chan
@@ -586,6 +591,24 @@ func (s *Whatsmiau) observeConnection(client *whatsmeow.Client, id string, phone
 
 			zap.L().Error("unknown event", zap.String("id", id), zap.Any("evt", evt))
 		}
+	}
+}
+
+// discardExpiredAttempt tears down a client whose pairing attempt ended without
+// logging in. A newer attempt may own this id by now, and it can be connected
+// already, so the map entry only goes away if it is still this client. The lock
+// keeps generateClient from storing a new client between the check and the delete.
+func (s *Whatsmiau) discardExpiredAttempt(id string, client *whatsmeow.Client) {
+	if err := s.deleteDeviceIfExists(context.TODO(), client); err != nil {
+		zap.L().Error("failed to hard logout", zap.String("id", id), zap.Error(err))
+	}
+
+	lock, _ := s.lockConnection.LoadOrStore(id, &sync.Mutex{})
+	lock.Lock()
+	defer lock.Unlock()
+
+	if current, ok := s.clients.Load(id); ok && current == client {
+		s.deleteClient(id)
 	}
 }
 
