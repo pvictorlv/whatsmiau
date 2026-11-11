@@ -69,9 +69,9 @@ func webhookRetryBackoff(attempt int) time.Duration {
 	return backoff
 }
 
-// enqueueWebhookRetry guarda o evento para reentrega. Falha de Redis aqui só
-// pode ser logada: é o último recurso, não há para onde escalar.
-func enqueueWebhookRetry(item webhookRetryItem) {
+// enqueueWebhookRetry guarda o evento para reentrega e diz se conseguiu. Para
+// os eventos ao vivo a falha só pode ser logada: é o último recurso.
+func enqueueWebhookRetry(item webhookRetryItem) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -82,13 +82,13 @@ func enqueueWebhookRetry(item webhookRetryItem) {
 			zap.String("url", item.URL),
 			zap.Int("attempts", item.Attempt),
 			zap.Time("first_attempt", item.FirstAt))
-		return
+		return false
 	}
 
 	if size, err := rdb.ZCard(ctx, webhookRetryKey).Result(); err == nil && size >= webhookRetryMaxQueued {
 		zap.L().Error("webhook retry queue is full, dropping event",
 			zap.String("url", item.URL), zap.Int64("queued", size))
-		return
+		return false
 	}
 
 	if item.ID == "" {
@@ -102,7 +102,7 @@ func enqueueWebhookRetry(item webhookRetryItem) {
 	raw, err := json.Marshal(item)
 	if err != nil {
 		zap.L().Error("failed to marshal webhook retry item", zap.Error(err))
-		return
+		return false
 	}
 
 	nextAt := time.Now().Add(webhookRetryBackoff(item.Attempt))
@@ -111,13 +111,27 @@ func enqueueWebhookRetry(item webhookRetryItem) {
 		Member: raw,
 	}).Err(); err != nil {
 		zap.L().Error("failed to queue webhook for retry", zap.Error(err), zap.String("url", item.URL))
-		return
+		return false
 	}
 
 	zap.L().Warn("webhook queued for retry",
 		zap.String("url", item.URL),
 		zap.Int("attempt", item.Attempt),
 		zap.Duration("in", time.Until(nextAt)))
+	return true
+}
+
+// spillHistoryChunk hands a history chunk to the retry queue, but only while
+// history holds less than half of it, so a long import never leaves live
+// events without room for their own retries.
+func spillHistoryChunk(item webhookRetryItem) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	size, err := services.Redis().ZCard(ctx, webhookRetryKey).Result()
+	if err != nil || size >= webhookRetryMaxQueued/2 {
+		return false
+	}
+	return enqueueWebhookRetry(item)
 }
 
 func (s *Whatsmiau) startWebhookRetryLoop() {

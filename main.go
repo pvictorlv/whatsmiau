@@ -8,6 +8,7 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/verbeux-ai/whatsmiau/env"
 	log_connect "github.com/verbeux-ai/whatsmiau/lib/log-connect"
+	"github.com/verbeux-ai/whatsmiau/lib/memguard"
 	"github.com/verbeux-ai/whatsmiau/lib/proxypool"
 	"github.com/verbeux-ai/whatsmiau/lib/whatsmiau"
 	"github.com/verbeux-ai/whatsmiau/server/routes"
@@ -44,6 +45,10 @@ func main() {
 	if err := log_connect.StartLogger(); err != nil {
 		log.Fatalln(err)
 	}
+
+	memguard.ApplyDefaultLimit(env.Env.DefaultMemoryLimitMB)
+	memguard.LogEvery(env.Env.MemStatsInterval)
+	memguard.ServePprof(env.Env.PprofAddr)
 
 	proxypool.Configure(
 		env.Env.ProxyPoolFile,

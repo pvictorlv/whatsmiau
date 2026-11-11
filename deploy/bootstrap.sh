@@ -207,13 +207,15 @@ chmod 600 "$WM_DIR/.env"
 chmod +x "$WM_DIR/whatsmiau"
 
 # --- 5. PM2: sobe/atualiza o processo (cwd = WM_DIR p/ o godotenv achar .env) --
-log "(re)iniciando processo pm2 'whatsmiau'..."
-if pm2 describe whatsmiau >/dev/null 2>&1; then
-  pm2 restart whatsmiau --update-env
-else
-  # --interpreter none: executa o binário ELF diretamente
-  pm2 start "$WM_DIR/whatsmiau" --name whatsmiau --cwd "$WM_DIR" --interpreter none
-fi
+# O teto do PM2 é a rede de segurança acima do limite de heap do próprio Go
+# (4 GB por padrão, ver DEFAULT_MEMORY_LIMIT_MB). `pm2 restart` mantém o teto
+# antigo, então o processo é recriado para o teto valer sempre.
+WM_MAX_MEMORY="${WM_MAX_MEMORY:-6G}"
+log "(re)iniciando processo pm2 'whatsmiau' (teto de memória $WM_MAX_MEMORY)..."
+pm2 delete whatsmiau >/dev/null 2>&1 || true
+# --interpreter none: executa o binário ELF diretamente
+pm2 start "$WM_DIR/whatsmiau" --name whatsmiau --cwd "$WM_DIR" --interpreter none \
+  --max-memory-restart "$WM_MAX_MEMORY"
 pm2 save >/dev/null 2>&1 || true
 
 # --- 6. health check (autenticado: exercita HTTP + Redis + Postgres) ----------

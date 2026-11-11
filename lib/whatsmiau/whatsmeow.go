@@ -50,6 +50,8 @@ type Whatsmiau struct {
 	linkPreviewClient  *http.Client
 	fileStorage        interfaces.Storage
 	handlerSemaphore   chan struct{}
+	contactPicSlots    chan struct{} // history contact batches fetching photos at once
+	historyEmitter     chan emitter  // history chunks, apart from live events
 	pendingSyncs       *xsync.Map[string, *pendingSyncWaiter]
 	syncLocks          *xsync.Map[string, *sync.Mutex]
 }
@@ -239,6 +241,8 @@ func LoadMiau(ctx context.Context, container *sqlstore.Container) {
 		linkPreviewClient: newLinkPreviewHTTPClient(),
 		fileStorage:       storage,
 		handlerSemaphore:  make(chan struct{}, env.Env.HandlerSemaphoreSize),
+		contactPicSlots:   make(chan struct{}, max(env.Env.HistoryContactPicWorkers, 1)),
+		historyEmitter:    make(chan emitter, max(env.Env.HistoryEmitQueue, 1)),
 		pendingSyncs:      xsync.NewMap[string, *pendingSyncWaiter](),
 		syncLocks:         xsync.NewMap[string, *sync.Mutex](),
 	}

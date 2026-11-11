@@ -102,6 +102,16 @@ func (s *Whatsmiau) startEmitter() {
 		}()
 	}
 
+	for i := 0; i < max(env.Env.HistoryEmitWorkers, 1); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for event := range s.historyEmitter {
+				s.processEmit(event)
+			}
+		}()
+	}
+
 	go s.startWebhookRetryLoop()
 
 	wg.Wait()
@@ -214,6 +224,34 @@ func (s *Whatsmiau) emit(body any, url string, headers map[string]string) {
 	s.emitter <- emitter{url: url, data: body, headers: headers}
 }
 
+// emitHistoryChunk queues one chunk of a bulk history sync on the history
+// queue, apart from live events. It runs inside whatsmeow's history loop, where
+// waiting stalls the instance's live message path and its restart/logout, so a
+// full queue spills the chunk to the Redis retry queue instead. Only when Redis
+// cannot take it either does it wait for room: a late chunk beats a lost one.
+func (s *Whatsmiau) emitHistoryChunk(body any, url string, headers map[string]string) {
+	if url == "" {
+		return
+	}
+	event := emitter{url: url, data: body, headers: headers}
+	select {
+	case s.historyEmitter <- event:
+		return
+	default:
+	}
+
+	data, err := json.Marshal(body)
+	if err != nil {
+		zap.L().Error("failed to marshal history chunk", zap.Error(err))
+		return
+	}
+	if spillHistoryChunk(webhookRetryItem{URL: url, Headers: headers, Body: data}) {
+		return
+	}
+	zap.L().Warn("history queue full and retry queue unavailable, waiting for room", zap.String("url", url))
+	s.historyEmitter <- event
+}
+
 func (s *Whatsmiau) Handle(id string) whatsmeow.EventHandler {
 	return func(evt any) {
 		// A resposta do aparelho a um pedido de reenvio de mídia vai direto a
@@ -223,6 +261,16 @@ func (s *Whatsmiau) Handle(id string) whatsmeow.EventHandler {
 		// chamada nossa.
 		if retry, ok := evt.(*events.MediaRetry); ok {
 			deliverMediaRetry(id, retry)
+			return
+		}
+
+		// whatsmeow dispatches history from a loop of its own and only downloads
+		// the next blob after this returns. Handling the bulk history here, not
+		// in a goroutine, keeps one decoded blob per instance in memory instead
+		// of every blob the phone uploads (that pile-up reached ~10 GB). Nothing
+		// on this path may wait on the network: see emitHistoryChunk.
+		if hs, ok := evt.(*events.HistorySync); ok && hs.Data != nil && hs.Data.GetSyncType() != waHistorySync.HistorySync_ON_DEMAND {
+			s.handleBulkHistorySync(id, hs)
 			return
 		}
 
@@ -665,6 +713,31 @@ var (
 
 const historySyncTimeout = 180 * time.Second
 
+// handleBulkHistorySync runs inside whatsmeow's history loop (see Handle):
+// blocking here holds back the next blob, which is the point.
+func (s *Whatsmiau) handleBulkHistorySync(id string, e *events.HistorySync) {
+	defer func() {
+		if r := recover(); r != nil {
+			zap.L().Error("panic in history sync handler",
+				zap.String("instance", id),
+				zap.Any("panic", r),
+				zap.Stack("stack"),
+			)
+		}
+	}()
+
+	instance := s.getInstanceCached(id)
+	if instance == nil {
+		zap.L().Warn("no instance found for event", zap.String("instance", id))
+		return
+	}
+	if instance.Webhook.Enabled != nil && !*instance.Webhook.Enabled {
+		return
+	}
+
+	s.handleHistorySyncEvent(id, instance, e, webhookEventMap(instance.Webhook.Events))
+}
+
 func (s *Whatsmiau) handleHistorySyncEvent(id string, instance *models.Instance, e *events.HistorySync, eventMap map[webhookConfigEvent]bool) {
 	if e == nil || e.Data == nil {
 		return
@@ -678,71 +751,125 @@ func (s *Whatsmiau) handleHistorySyncEvent(id string, instance *models.Instance,
 	// of SyncFullHistory, which only governs the bulk import at pairing time.
 	onDemand := e.Data.GetSyncType() == waHistorySync.HistorySync_ON_DEMAND
 
-	if (instance.FullHistoryEnabled() || onDemand) && eventMap[webhookConfigMessagesSet] {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
-		defer cancel()
-
-		var messages []WookMessageData
-		for _, conv := range e.Data.Conversations {
-			for _, msg := range conv.GetMessages() {
-				if msg.Message == nil || msg.Message.Message == nil {
-					continue
+	// Contacts are read before the message loop releases the conversations.
+	// Their photos are network calls, so fetching them and sending the contacts
+	// happens off this loop.
+	if eventMap[webhookConfigContactsUpsert] {
+		if contacts := s.collectHistoryContacts(id, e.Data.GetPushnames(), e.Data.Conversations); len(contacts) > 0 {
+			url, headers := instance.Webhook.Url, instance.Webhook.Headers
+			go func() {
+				s.contactPicSlots <- struct{}{}
+				defer func() { <-s.contactPicSlots }()
+				data := s.attachContactPics(id, contacts)
+				if len(data) == 0 {
+					return
 				}
-
-				messageData := s.buildMessageDataFromHistory(ctx, id, msg.Message, conv.GetName(), conv.GetDisplayName())
-				if messageData == nil {
-					continue
-				}
-
-				messageData.InstanceId = instance.ID
-				messages = append(messages, *messageData)
-			}
-		}
-
-		if len(messages) > 0 {
-			prog := int(progress)
-			wookEvent := &WookEvent[[]WookMessageData]{
-				Instance: instance.ID,
-				Data:     &messages,
-				DateTime: time.Now(),
-				Event:    WookMessagesSet,
-				IsLatest: &isLatest,
-				Progress: &prog,
-				SyncType: e.Data.GetSyncType().String(),
-			}
-			s.emit(wookEvent, instance.Webhook.Url, instance.Webhook.Headers)
-		}
-
-		// The watchdog tracks the bulk import only. An on-demand sync carries no
-		// meaningful progress, so letting it touch the watchdog would either
-		// abort a running import or keep one alive forever.
-		if !onDemand {
-			if isLatest {
-				s.stopHistorySyncWatchdog(id)
-			} else {
-				historySyncProgress.Store(id, progress)
-				s.resetHistorySyncWatchdog(id)
-			}
+				s.emit(&WookEvent[WookContactUpsertData]{
+					Instance: instance.ID,
+					Data:     &data,
+					DateTime: time.Now(),
+					Event:    WookContactsUpsert,
+				}, url, headers)
+			}()
 		}
 	}
 
-	if !eventMap[webhookConfigContactsUpsert] {
+	if !(instance.FullHistoryEnabled() || onDemand) || !eventMap[webhookConfigMessagesSet] {
 		return
 	}
 
-	data := s.convertContactHistorySync(id, e.Data.GetPushnames(), e.Data.Conversations)
-	if data == nil {
+	prog := int(progress)
+	syncType := e.Data.GetSyncType().String()
+	chunks := newHistoryChunker(env.Env.HistorySyncChunkSize, func(messages []WookMessageData, last bool) {
+		latest := isLatest && last
+		s.emitHistoryChunk(&WookEvent[[]WookMessageData]{
+			Instance: instance.ID,
+			Data:     &messages,
+			DateTime: time.Now(),
+			Event:    WookMessagesSet,
+			IsLatest: &latest,
+			Progress: &prog,
+			SyncType: syncType,
+		}, instance.Webhook.Url, instance.Webhook.Headers)
+	})
+
+	for i, conv := range e.Data.Conversations {
+		// The JID lookups hit the store; a budget per conversation keeps a long
+		// blob from running its last lookups on an expired deadline.
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		for _, msg := range conv.GetMessages() {
+			if msg.Message == nil || msg.Message.Message == nil {
+				continue
+			}
+
+			messageData := s.buildMessageDataFromHistory(ctx, id, msg.Message, conv.GetName(), conv.GetDisplayName())
+			if messageData == nil {
+				continue
+			}
+
+			messageData.InstanceId = instance.ID
+			chunks.add(*messageData)
+		}
+		cancel()
+		// Its messages are copied into chunks already; the blob would otherwise
+		// stay whole in memory until the last chunk is built.
+		e.Data.Conversations[i] = nil
+	}
+	chunks.finish()
+
+	// The watchdog tracks the bulk import only. An on-demand sync carries no
+	// meaningful progress, so letting it touch the watchdog would either
+	// abort a running import or keep one alive forever.
+	if !onDemand {
+		if isLatest {
+			s.stopHistorySyncWatchdog(id)
+		} else {
+			historySyncProgress.Store(id, progress)
+			s.resetHistorySyncWatchdog(id)
+		}
+	}
+}
+
+// historyChunker cuts a blob's messages into webhook-sized chunks. It holds
+// one full chunk back so the final one, and only that one, is sent with
+// last=true, even when the count divides evenly.
+type historyChunker struct {
+	size    int
+	send    func(messages []WookMessageData, last bool)
+	held    []WookMessageData
+	current []WookMessageData
+}
+
+func newHistoryChunker(size int, send func(messages []WookMessageData, last bool)) *historyChunker {
+	if size <= 0 {
+		size = 250
+	}
+	return &historyChunker{size: size, send: send, current: make([]WookMessageData, 0, size)}
+}
+
+func (c *historyChunker) add(m WookMessageData) {
+	c.current = append(c.current, m)
+	if len(c.current) < c.size {
 		return
 	}
-
-	wookData := &WookEvent[WookContactUpsertData]{
-		Instance: instance.ID,
-		Data:     &data,
-		DateTime: time.Now(),
-		Event:    WookContactsUpsert,
+	if c.held != nil {
+		c.send(c.held, false)
 	}
+	c.held = c.current
+	c.current = make([]WookMessageData, 0, c.size)
+}
 
-	s.emit(wookData, instance.Webhook.Url, instance.Webhook.Headers)
+func (c *historyChunker) finish() {
+	switch {
+	case c.held != nil && len(c.current) == 0:
+		c.send(c.held, true)
+	case c.held != nil:
+		c.send(c.held, false)
+		c.send(c.current, true)
+	case len(c.current) > 0:
+		c.send(c.current, true)
+	}
+	c.held, c.current = nil, nil
 }
 
 func cleanHistorySyncState(id string) {
@@ -1339,7 +1466,9 @@ func contextInfoOf(m *waE2E.Message) *waE2E.ContextInfo {
 	}
 }
 
-func (s *Whatsmiau) convertContactHistorySync(id string, event []*waHistorySync.Pushname, conversations []*waHistorySync.Conversation) WookContactUpsertData {
+// collectHistoryContacts reads the contacts of a history blob (store lookups
+// only, no network); attachContactPics then fetches their photos.
+func (s *Whatsmiau) collectHistoryContacts(id string, event []*waHistorySync.Pushname, conversations []*waHistorySync.Conversation) map[string]WookContact {
 	resultMap := make(map[string]WookContact)
 	for _, pushName := range event {
 
@@ -1404,8 +1533,12 @@ func (s *Whatsmiau) convertContactHistorySync(id string, event []*waHistorySync.
 		}
 	}
 
+	return resultMap
+}
+
+func (s *Whatsmiau) attachContactPics(id string, contacts map[string]WookContact) WookContactUpsertData {
 	var result []WookContact
-	for _, c := range resultMap {
+	for _, c := range contacts {
 		jid, err := types.ParseJID(c.RemoteJid)
 		if err != nil {
 			continue

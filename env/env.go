@@ -59,6 +59,27 @@ type E struct {
 	HandlerSemaphoreSize int `env:"HANDLER_SEMAPHORE_SIZE" envDefault:"512"`
 	EmitterWorkers       int `env:"EMITTER_WORKERS" envDefault:"50"`
 
+	// The bulk history of a pairing arrives as blobs of tens of thousands of
+	// messages. Each blob is cut into webhook chunks of HistorySyncChunkSize
+	// inside whatsmeow's history loop, so an instance holds one decoded blob at
+	// a time. The amount of history requested is not limited.
+	HistorySyncChunkSize int `env:"HISTORY_SYNC_CHUNK_SIZE" envDefault:"250"`
+	// History chunks have a delivery queue and workers of their own, so an
+	// import never sits in front of live events.
+	HistoryEmitQueue   int `env:"HISTORY_EMIT_QUEUE" envDefault:"64"`
+	HistoryEmitWorkers int `env:"HISTORY_EMIT_WORKERS" envDefault:"4"`
+	// Contacts of a history blob whose photos are being fetched at once.
+	HistoryContactPicWorkers int `env:"HISTORY_CONTACT_PIC_WORKERS" envDefault:"4"`
+
+	// Soft heap limit applied when GOMEMLIMIT is not set; the GC works harder
+	// as the heap nears it instead of letting the process grow until the
+	// kernel kills it. 0 disables it.
+	DefaultMemoryLimitMB int `env:"DEFAULT_MEMORY_LIMIT_MB" envDefault:"4096"`
+	// Logs runtime memory stats at this interval (0 disables).
+	MemStatsInterval time.Duration `env:"MEMSTATS_INTERVAL" envDefault:"5m"`
+	// Optional pprof listener, e.g. 127.0.0.1:6060. Empty keeps it off.
+	PprofAddr string `env:"PPROF_ADDR" envDefault:""`
+
 	ProxyAddresses []string `env:"PROXY_ADDRESSES" envDefault:""`      // random choices proxies ex: <SOCKS5|HTTP|HTTPS>://<username>:<password>@<host>:<port>
 	ProxyStrategy  string   `env:"PROXY_STRATEGY" envDefault:"RANDOM"` // todo: implement BALANCED
 	ProxyNoMedia   bool     `env:"PROXY_NO_MEDIA" envDefault:"false"`
