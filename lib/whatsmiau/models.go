@@ -85,6 +85,9 @@ type WookMessageContextInfo struct {
 	EntryPointConversionApp          string                                 `json:"entryPointConversionApp,omitempty"`
 	EntryPointConversionDelaySeconds int                                    `json:"entryPointConversionDelaySeconds,omitempty"`
 	TrustBannerAction                uint32                                 `json:"trustBannerAction,omitempty"`
+	// NonJidMentions é a contagem de menções sem JID (ex.: @todos), que o
+	// WhatsApp manda sem preencher MentionedJid.
+	NonJidMentions int `json:"nonJidMentions,omitempty"`
 }
 
 type WookMessageContextInfoExternalAdReply struct {
@@ -337,6 +340,7 @@ type WookContactUpsertData []WookContact
 type WookConnectionUpdateData struct {
 	Instance          string `json:"instance,omitempty"`
 	Wuid              string `json:"wuid,omitempty"`
+	Lid               string `json:"lid,omitempty"`
 	ProfileName       string `json:"profileName,omitempty"`
 	ProfilePictureUrl string `json:"profilePictureUrl,omitempty"`
 	State             string `json:"state"`

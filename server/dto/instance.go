@@ -74,6 +74,7 @@ type ListInstancesResponse struct {
 	*models.Instance
 
 	OwnerJID     string `json:"ownerJid,omitempty"`
+	OwnerLid     string `json:"ownerLid,omitempty"`
 	InstanceName string `json:"instanceName,omitempty"`
 	// Estado do socket, no mesmo campo e vocabulário da Evolution ("open",
 	// "connecting", "close"). O watchdog de saúde do CRM varre a frota por este
@@ -102,6 +103,7 @@ type StatusInstanceRequest struct {
 type StatusInstanceResponse struct {
 	ID       string                                        `json:"id,omitempty"`
 	Status   string                                        `json:"state,omitempty"`
+	Lid      string                                        `json:"lid,omitempty"`
 	Instance *StatusInstanceResponseEvolutionCompatibility `json:"instance,omitempty"`
 }
 

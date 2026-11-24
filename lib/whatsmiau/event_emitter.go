@@ -1078,6 +1078,7 @@ func (s *Whatsmiau) handleConnectionUpdateEvent(id string, instance *models.Inst
 			data.Wuid = client.Store.ID.ToNonAD().String()
 			data.ProfileName = client.Store.PushName
 		}
+		data.Lid = s.OwnLID(id)
 	}
 
 	wookEvent := &WookEvent[WookConnectionUpdateData]{
@@ -1700,6 +1701,7 @@ func (s *Whatsmiau) convertEventMessage(id string, instance *models.Instance, ev
 		messageContext.Participant = ci.GetParticipant()
 		messageContext.Expiration = int(ci.GetExpiration())
 		messageContext.MentionedJid = ci.GetMentionedJID()
+		messageContext.NonJidMentions = int(ci.GetNonJIDMentions())
 		messageContext.ConversionSource = ci.GetConversionSource()
 		messageContext.ConversionData = b64(ci.GetConversionData())
 		messageContext.ConversionDelaySeconds = int(ci.GetConversionDelaySeconds())

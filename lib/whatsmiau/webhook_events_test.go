@@ -10,6 +10,7 @@ import (
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 )
@@ -344,5 +345,75 @@ func TestWebhookSubscriptionsRemainIsolated(t *testing.T) {
 	case emitted := <-service.emitter:
 		t.Fatalf("connection subscription unexpectedly emitted message event: %#v", emitted)
 	default:
+	}
+}
+
+func TestOwnLIDReturnsEmptyWithoutClientOrLID(t *testing.T) {
+	if got := ownLID(nil); got != "" {
+		t.Fatalf("expected empty LID for nil client, got %q", got)
+	}
+	if got := ownLID(&whatsmeow.Client{}); got != "" {
+		t.Fatalf("expected empty LID for client without store, got %q", got)
+	}
+	if got := ownLID(&whatsmeow.Client{Store: &store.Device{LID: types.EmptyJID}}); got != "" {
+		t.Fatalf("expected empty LID for empty store LID, got %q", got)
+	}
+}
+
+func TestOwnLIDStripsDevice(t *testing.T) {
+	client := &whatsmeow.Client{Store: &store.Device{LID: types.JID{User: "123456789", Device: 7, Server: types.HiddenUserServer}}}
+	if got := ownLID(client); got != "123456789@lid" {
+		t.Fatalf("expected 123456789@lid, got %q", got)
+	}
+}
+
+func TestConnectionUpdateCarriesOwnLIDOnlyWhenOpen(t *testing.T) {
+	for _, tt := range []struct {
+		state    string
+		expected string
+	}{
+		{state: "open", expected: "123456789@lid"},
+		{state: "connecting", expected: ""},
+	} {
+		t.Run(tt.state, func(t *testing.T) {
+			service := &Whatsmiau{
+				clients: xsync.NewMap[string, *whatsmeow.Client](),
+				emitter: make(chan emitter, 1),
+			}
+			service.clients.Store("instance-1", &whatsmeow.Client{
+				Store: &store.Device{LID: types.NewJID("123456789", types.HiddenUserServer)},
+			})
+			instance := &models.Instance{
+				ID:      "instance-1",
+				Webhook: models.InstanceWebhook{Url: "https://webhook.example/connection"},
+			}
+
+			service.handleConnectionUpdateEvent("instance-1", instance, tt.state, 0,
+				map[webhookConfigEvent]bool{webhookConfigConnectionUpdate: true})
+
+			select {
+			case emitted := <-service.emitter:
+				payload, ok := emitted.data.(*WookEvent[WookConnectionUpdateData])
+				if !ok {
+					t.Fatalf("unexpected emitted data type %T", emitted.data)
+				}
+				if payload.Data.Lid != tt.expected {
+					t.Fatalf("expected lid %q, got %q", tt.expected, payload.Data.Lid)
+				}
+				encoded, err := json.Marshal(payload.Data)
+				if err != nil {
+					t.Fatalf("marshal failed: %v", err)
+				}
+				var decoded map[string]any
+				if err := json.Unmarshal(encoded, &decoded); err != nil {
+					t.Fatalf("unmarshal failed: %v", err)
+				}
+				if _, present := decoded["lid"]; present != (tt.expected != "") {
+					t.Fatalf("lid presence mismatch for %q: %s", tt.state, encoded)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("expected connection webhook")
+			}
+		})
 	}
 }

@@ -2,10 +2,17 @@ package whatsmiau
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/puzpuzpuz/xsync/v4"
+	"github.com/verbeux-ai/whatsmiau/models"
+	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/types"
+	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -250,5 +257,61 @@ func TestUnknownStaysUnknown(t *testing.T) {
 
 	if messageType != "unknown" {
 		t.Errorf("expected unknown, got %q", messageType)
+	}
+}
+
+// TestConvertEventMessageCarriesNonJidMentions trava o contrato do @todos: o
+// WhatsApp manda a menção coletiva só como contagem em nonJidMentions, sem
+// nenhum item em mentionedJid, e o backend precisa dela para reconhecer.
+func TestConvertEventMessageCarriesNonJidMentions(t *testing.T) {
+	s := &Whatsmiau{clients: xsync.NewMap[string, *whatsmeow.Client]()}
+	s.clients.Store("instance-1", &whatsmeow.Client{})
+
+	build := func(nonJID uint32) *WookMessageData {
+		msg := &waE2E.Message{
+			ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+				Text:        proto.String("@todos reunião"),
+				ContextInfo: &waE2E.ContextInfo{NonJIDMentions: proto.Uint32(nonJID)},
+			},
+		}
+		evt := &events.Message{
+			Info: types.MessageInfo{
+				MessageSource: types.MessageSource{
+					Chat:    types.NewJID("120363000000000000", types.GroupServer),
+					Sender:  types.NewJID("5511999999999", types.DefaultUserServer),
+					IsGroup: true,
+				},
+				ID:        "msg-1",
+				Timestamp: time.Now(),
+			},
+			Message:    msg,
+			RawMessage: msg,
+		}
+		return s.convertEventMessage("instance-1", &models.Instance{ID: "instance-1"}, evt)
+	}
+
+	data := build(1)
+	if data == nil || data.ContextInfo == nil {
+		t.Fatalf("expected contextInfo in converted message, got %#v", data)
+	}
+	if data.ContextInfo.NonJidMentions != 1 {
+		t.Fatalf("expected nonJidMentions=1, got %d", data.ContextInfo.NonJidMentions)
+	}
+	if len(data.ContextInfo.MentionedJid) != 0 {
+		t.Fatalf("expected no mentionedJid for a collective mention, got %v", data.ContextInfo.MentionedJid)
+	}
+	encoded, err := json.Marshal(data.ContextInfo)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"nonJidMentions":1`) {
+		t.Fatalf("nonJidMentions missing from payload: %s", encoded)
+	}
+
+	if zero := build(0); zero != nil && zero.ContextInfo != nil {
+		encoded, _ := json.Marshal(zero.ContextInfo)
+		if strings.Contains(string(encoded), "nonJidMentions") {
+			t.Fatalf("nonJidMentions must be omitted when zero: %s", encoded)
+		}
 	}
 }

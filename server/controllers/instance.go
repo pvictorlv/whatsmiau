@@ -243,6 +243,7 @@ func (s *Instance) List(ctx echo.Context) error {
 		response = append(response, dto.ListInstancesResponse{
 			Instance:         &instance,
 			OwnerJID:         jid.ToNonAD().String(),
+			OwnerLid:         s.whatsmiau.OwnLID(instance.ID),
 			InstanceName:     instance.ID,
 			ConnectionStatus: string(status),
 		})
@@ -405,6 +406,7 @@ func (s *Instance) Status(ctx echo.Context) error {
 	return ctx.JSON(http.StatusOK, dto.StatusInstanceResponse{
 		ID:     request.ID,
 		Status: string(status),
+		Lid:    s.whatsmiau.OwnLID(request.ID),
 		Instance: &dto.StatusInstanceResponseEvolutionCompatibility{
 			InstanceName: request.ID,
 			State:        string(status),

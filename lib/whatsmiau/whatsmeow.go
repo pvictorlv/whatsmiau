@@ -698,6 +698,24 @@ func (s *Whatsmiau) deleteDeviceIfExists(ctx context.Context, client *whatsmeow.
 	return nil
 }
 
+// ownLID devolve o LID da própria conta (`123@lid`, sem device) ou "" quando o
+// cliente não existe ou a sessão ainda não tem LID.
+func ownLID(client *whatsmeow.Client) string {
+	if client == nil || client.Store == nil || client.Store.LID.IsEmpty() {
+		return ""
+	}
+	return client.Store.LID.ToNonAD().String()
+}
+
+// OwnLID é o LID da conta da instância, ou "" se desconhecido.
+func (s *Whatsmiau) OwnLID(id string) string {
+	client, ok := s.clients.Load(id)
+	if !ok {
+		return ""
+	}
+	return ownLID(client)
+}
+
 func (s *Whatsmiau) Status(id string) (Status, error) {
 	client, ok := s.clients.Load(id)
 	if !ok {
