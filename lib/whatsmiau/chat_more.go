@@ -23,7 +23,7 @@ func (s *Whatsmiau) UpdateBlockStatus(ctx context.Context, instanceID string, ji
 		action = events.BlocklistChangeActionBlock
 	}
 
-	_, err := client.UpdateBlocklist(ctx, jid, action)
+	_, err := client.UpdateBlocklist(ctx, jid, action, "")
 	return err
 }
 
