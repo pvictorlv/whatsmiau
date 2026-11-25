@@ -21,6 +21,14 @@ type E struct {
 	DBDialect string `env:"DIALECT_DB" envDefault:"sqlite3"`                   // sqlite3 or postgres
 	DBURL     string `env:"DB_URL" envDefault:"file:data.db?_foreign_keys=on"` // "postgres://<user>:<pass>@<host>:<port>/<DB>?sslmode=disable
 
+	// Connections to Postgres. The server is shared with the CRM and the evolution,
+	// so the pool must not take every slot during a burst. 0 removes the cap.
+	// SQLite ignores both.
+	DBMaxOpenConns int `env:"DB_MAX_OPEN_CONNS" envDefault:"40"`
+	DBMaxIdleConns int `env:"DB_MAX_IDLE_CONNS" envDefault:"10"`
+	// How long the startup waits for a database that refuses connections.
+	DBStartupTimeout time.Duration `env:"DB_STARTUP_TIMEOUT" envDefault:"60s"`
+
 	GCSEnabled bool   `env:"GCS_ENABLED" envDefault:"false"`
 	GCSBucket  string `env:"GCS_BUCKET" envDefault:"whatsmiau"`
 	GCSURL     string `env:"GCS_URL" envDefault:"https://storage.googleapis.com"`
