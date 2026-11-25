@@ -52,8 +52,10 @@ jobs:
         run: |
           mkdir dist
           # No commit stamped inside: a push that does not change the program gives the same
-          # binary, and the updater sees nothing to restart.
-          go build -trimpath -buildvcs=false -ldflags="-s -w" -o "dist/$ASSET" .
+          # binary, and the updater sees nothing to restart. It compares only the binary, so
+          # the build id carries bootstrap.sh: a change to that file alone still reaches the fleet.
+          bootstrap_id=$(sha256sum deploy/bootstrap.sh | cut -c1-32)
+          go build -trimpath -buildvcs=false -ldflags="-s -w -buildid=$bootstrap_id" -o "dist/$ASSET" .
 
       - name: Check the binary the way the updater does
         working-directory: dist

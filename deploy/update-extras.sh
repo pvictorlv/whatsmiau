@@ -305,6 +305,14 @@ voice_unit_value() { # $1=opção do ExecStart (-addr, -db) -> valor, ou vazio
     | grep -oE -- "$1[ =][^ ]+" | head -1 | sed -E "s/^$1[ =]//"
 }
 
+# A chave vai por um descritor: num argumento, qualquer usuário da máquina a leria no
+# `ps` enquanto o download dura. O printf é do próprio bash e não cria processo.
+panel_curl() { # $1=chave; o resto são argumentos do curl
+  local key=$1
+  shift
+  curl -fsSL --retry 3 -H @<(printf 'Authorization: Bearer %s\n' "$key") "$@"
+}
+
 voice_healthy() { # $1=porta [$2=tentativas] -> 0 se o serviço atende
   local i code
   for i in $(seq 1 "${2:-15}"); do
@@ -345,7 +353,7 @@ update_voice() {
     log "voice: sem key.txt para baixar do painel; nada foi alterado"
     return 1
   fi
-  if ! meta=$(curl -fsSL --retry 3 -m 60 -H "Authorization: Bearer $key" "$PANEL_URL/api/downloads/last?branch=voice"); then
+  if ! meta=$(panel_curl "$key" -m 60 "$PANEL_URL/api/downloads/last?branch=voice"); then
     log "voice: o painel não informou a versão; nada foi alterado"
     return 1
   fi
@@ -383,7 +391,7 @@ update_voice() {
   # shellcheck disable=SC2064
   trap "rm -rf '$tmp'" RETURN
 
-  if ! curl -fsSL --retry 3 -m 600 -H "Authorization: Bearer $key" -o "$tmp/voice" "$PANEL_URL/api/download?file_name=$path"; then
+  if ! panel_curl "$key" -m 600 -o "$tmp/voice" "$PANEL_URL/api/download?file_name=$path"; then
     log "voice: falha ao baixar $version; nada foi alterado"
     return 1
   fi
