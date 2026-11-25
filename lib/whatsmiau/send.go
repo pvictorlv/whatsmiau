@@ -164,15 +164,38 @@ type EditMessageKey struct {
 }
 
 type UpdateMessage struct {
-	Text       string          `json:"text"`
-	InstanceID string          `json:"instance_id"`
-	RemoteJID  *types.JID      `json:"remote_jid"`
-	Key        *EditMessageKey `json:"key"`
+	Text        string          `json:"text"`
+	InstanceID  string          `json:"instance_id"`
+	RemoteJID   *types.JID      `json:"remote_jid"`
+	Key         *EditMessageKey `json:"key"`
+	MessageType string          `json:"message_type"`
 }
 
 type UpdateMessageResponse struct {
 	ID        string    `json:"id"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// editedContent builds the new content of an edit. The type has to match the
+// target message: WhatsApp acks a plain-text edit aimed at a media message but
+// leaves its caption untouched. Media edits carry the caption alone, without
+// the file, exactly as WhatsApp Web sends them.
+func editedContent(messageType, text string) *waE2E.Message {
+	caption := proto.String(text)
+	switch messageType {
+	case "imageMessage":
+		return &waE2E.Message{ImageMessage: &waE2E.ImageMessage{Caption: caption}}
+	case "videoMessage":
+		return &waE2E.Message{VideoMessage: &waE2E.VideoMessage{Caption: caption}}
+	case "documentMessage", "documentWithCaptionMessage":
+		return &waE2E.Message{
+			DocumentWithCaptionMessage: &waE2E.FutureProofMessage{
+				Message: &waE2E.Message{DocumentMessage: &waE2E.DocumentMessage{Caption: caption}},
+			},
+		}
+	default:
+		return &waE2E.Message{Conversation: caption}
+	}
 }
 
 func (s *Whatsmiau) UpdateMessage(ctx context.Context, data *UpdateMessage) (*UpdateMessageResponse, error) {
@@ -192,9 +215,7 @@ func (s *Whatsmiau) UpdateMessage(ctx context.Context, data *UpdateMessage) (*Up
 
 	chat := s.resolveJID(ctx, client, *data.RemoteJID)
 
-	res, err := client.SendMessage(ctx, chat, client.BuildEdit(chat, types.MessageID(data.Key.ID), &waE2E.Message{
-		Conversation: proto.String(data.Text),
-	}))
+	res, err := client.SendMessage(ctx, chat, client.BuildEdit(chat, types.MessageID(data.Key.ID), editedContent(data.MessageType, data.Text)))
 	if err != nil {
 		return nil, err
 	}

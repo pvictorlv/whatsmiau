@@ -60,6 +60,9 @@ type UpdateMessageRequest struct {
 	Number     string           `json:"number" validate:"required"`
 	Text       string           `json:"text" validate:"required"`
 	Key        UpdateMessageKey `json:"key" validate:"required"`
+	// MessageType is the type of the message being edited. Empty (or any type
+	// other than image, video and document) edits it as text.
+	MessageType string `json:"messageType,omitempty"`
 }
 
 type UpdateMessageKey struct {

@@ -320,7 +320,7 @@ func (s *Chat) DeleteMessageForEveryone(ctx echo.Context) error {
 
 // UpdateMessage godoc
 // @Summary      Edit a message
-// @Description  Edits a previously sent text message, mirroring Evolution API's POST /chat/updateMessage
+// @Description  Edits a previously sent text message or the caption of an image, video or document, mirroring Evolution API's POST /chat/updateMessage
 // @Tags         Chat
 // @Accept       json
 // @Produce      json
@@ -350,9 +350,10 @@ func (s *Chat) UpdateMessage(ctx echo.Context) error {
 
 	c := ctx.Request().Context()
 	res, err := s.whatsmiau.UpdateMessage(c, &whatsmiau.UpdateMessage{
-		Text:       request.Text,
-		InstanceID: request.InstanceID,
-		RemoteJID:  jid,
+		Text:        request.Text,
+		InstanceID:  request.InstanceID,
+		RemoteJID:   jid,
+		MessageType: request.MessageType,
 		Key: &whatsmiau.EditMessageKey{
 			ID:          request.Key.Id,
 			RemoteJID:   request.Key.RemoteJid,
