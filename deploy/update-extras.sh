@@ -12,8 +12,9 @@
 #   ONLY=miau    só o whatsmiau        ONLY=evolution   só o evolution-api
 #   ONLY=chrome  só o Chrome do PDF das propostas    ONLY=fonts   só as fontes do PDF
 #
-# Nunca devolve erro ao cron: cada etapa registra o resultado e a seguinte roda.
-# Uma etapa que falha desfaz a própria troca e deixa o serviço como estava.
+# Cada etapa registra o resultado e a seguinte roda. Uma etapa que falha desfaz a
+# própria troca e deixa o serviço como estava. Sai com 2 só quando um serviço ficou
+# FORA DO AR depois disso; qualquer outra falha sai com 0.
 
 WM_DIR=${WM_DIR:-/home/whatsmiau}
 EVO_DIR=${EVO_DIR:-/home/evolution-api}
@@ -21,6 +22,7 @@ WM_REPO=${WM_REPO:-pvictorlv/whatsmiau}
 RELEASE_URL="https://github.com/${WM_REPO}/releases/latest/download"
 ASSET=whatsmiau-linux-amd64
 LOG=${LOG:-/home/Installer/update-extras.log}
+LOCK_FILE=${LOCK_FILE:-/var/lock/update-extras.lock}
 CHROME_BIN=${CHROME_BIN:-/opt/google/chrome/chrome}
 CHROME_URL=${CHROME_URL:-https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb}
 FONT_DIR=${FONT_DIR:-/usr/local/share/fonts/proposal}
@@ -32,10 +34,12 @@ ONLY=${ONLY:-all}
 # O tsc do evolution e o do Zapeada estouram o heap padrão do node nestas máquinas.
 export NODE_OPTIONS=${NODE_OPTIONS:---max-old-space-size=4096}
 
+DOWN=""   # serviços que ficaram fora do ar
+
 log() { echo "$(date '+%F %T') [update-extras] $*" | tee -a "$LOG"; }
 
 # Duas execuções ao mesmo tempo (cron + mão) reiniciariam o mesmo serviço duas vezes.
-exec 9>/var/lock/update-extras.lock
+exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
   log "outra execução em andamento; saindo"
   exit 0
@@ -52,13 +56,55 @@ prune_backups() { # $1=prefixo do arquivo -> mantém só os KEEP_BACKUPS mais no
 # --------------------------------------------------------------------------- #
 # whatsmiau
 # --------------------------------------------------------------------------- #
+wm_healthy() { # $1=porta $2=api key [$3=tentativas] -> 0 se responder 200 autenticado
+  local i code
+  for i in $(seq 1 "${3:-8}"); do
+    [ "$i" -gt 1 ] && sleep 4
+    code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' -H "apikey: $2" \
+      "http://127.0.0.1:$1/v1/instance/fetchInstances")
+    [ "$code" = 200 ] && return 0
+  done
+  return 1
+}
+
+wm_pid() { # pid do processo do pm2, ou 0
+  local pid
+  pid=$(pm2 pid whatsmiau 2>/dev/null | tail -1 | tr -dc 0-9)
+  echo "${pid:-0}"
+}
+
+wm_recover() { # $1=porta $2=api key -> reinicia até voltar; registra em DOWN se não voltar
+  local attempt
+  for attempt in 1 2 3; do
+    # O bootstrap apaga o processo antes de recriá-lo: pode não haver o que reiniciar.
+    pm2 restart whatsmiau --exp-backoff-restart-delay=1000 >>"$LOG" 2>&1 \
+      || pm2 start "$WM_DIR/whatsmiau" --name whatsmiau --cwd "$WM_DIR" --interpreter none \
+           --max-memory-restart "${WM_MAX_MEMORY:-6G}" --exp-backoff-restart-delay=1000 >>"$LOG" 2>&1
+    # 60s: é o quanto o whatsmiau espera por um banco que recusa conexão.
+    if wm_healthy "$1" "$2" 16; then
+      pm2 save >/dev/null 2>&1
+      log "whatsmiau: no ar depois da tentativa $attempt"
+      return 0
+    fi
+    log "whatsmiau: tentativa $attempt de religar não respondeu"
+    sleep 10
+  done
+  log "whatsmiau: FORA DO AR depois de 3 tentativas; precisa de intervenção"
+  DOWN="$DOWN whatsmiau"
+  return 1
+}
+
 update_whatsmiau() {
   if [ ! -x "$WM_DIR/whatsmiau" ]; then
     log "whatsmiau: não instalado em $WM_DIR; nada a fazer"
     return 0
   fi
 
-  local tmp want have
+  local tmp want have port redis_db api_key
+  port=$(env_value "$WM_DIR/.env" PORT);         port=${port:-8085}
+  redis_db=$(env_value "$WM_DIR/.env" REDIS_DB); redis_db=${redis_db:-5}
+  api_key=$(env_value "$WM_DIR/.env" API_KEY);   api_key=${api_key:-$(cat "$WM_DIR/.api_key" 2>/dev/null)}
+
   tmp=$(mktemp -d) || { log "whatsmiau: sem diretório temporário"; return 1; }
   # shellcheck disable=SC2064
   trap "rm -rf '$tmp'" RETURN
@@ -86,6 +132,10 @@ update_whatsmiau() {
   have=$(sha256sum "$WM_DIR/whatsmiau" | awk '{print $1}')
   if [ "$have" = "$want" ]; then
     log "whatsmiau: já está na versão do release (${want:0:12})"
+    if [ "$DRY_RUN" != 1 ] && ! wm_healthy "$port" "$api_key"; then
+      log "whatsmiau: não responde na porta $port; religando"
+      wm_recover "$port" "$api_key" || return 1
+    fi
     return 0
   fi
   if [ "$DRY_RUN" = 1 ]; then
@@ -96,11 +146,9 @@ update_whatsmiau() {
   # O bootstrap reescreve o .env inteiro a partir destas variáveis: sem repassar a
   # porta e o DB do Redis que a máquina já usa, uma instalação fora do padrão
   # voltaria aos defaults sem aviso.
-  local port redis_db api_key stamp
-  port=$(env_value "$WM_DIR/.env" PORT);        port=${port:-8085}
-  redis_db=$(env_value "$WM_DIR/.env" REDIS_DB); redis_db=${redis_db:-5}
-  api_key=$(env_value "$WM_DIR/.env" API_KEY)
+  local stamp pid_before
   stamp=$(date +%Y%m%d-%H%M%S)
+  pid_before=$(wm_pid)
 
   cp -p "$WM_DIR/whatsmiau" "$WM_DIR/whatsmiau.bak-$stamp"
   cp -p "$WM_DIR/bootstrap.sh" "$WM_DIR/bootstrap.sh.bak-$stamp" 2>/dev/null
@@ -115,28 +163,27 @@ update_whatsmiau() {
   local rc=$?
 
   # O health do bootstrap só avisa; aqui um 200 autenticado decide se a troca fica.
-  local code=000 i
-  api_key=${api_key:-$(cat "$WM_DIR/.api_key" 2>/dev/null)}
-  if [ $rc -eq 0 ]; then
-    for i in 1 2 3 4 5 6 7 8; do
-      sleep 4
-      code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' -H "apikey: $api_key" \
-        "http://127.0.0.1:$port/v1/instance/fetchInstances" || echo 000)
-      [ "$code" = 200 ] && break
-    done
-  fi
-
-  if [ $rc -eq 0 ] && [ "$code" = 200 ]; then
+  # O bootstrap pode ter trocado a chave pela do Zapeada.
+  local new_key
+  new_key=$(cat "$WM_DIR/.api_key" 2>/dev/null)
+  if [ $rc -eq 0 ] && wm_healthy "$port" "${new_key:-$api_key}" 16; then
     log "whatsmiau: atualizado e saudável (HTTP 200)"
     prune_backups "$WM_DIR/whatsmiau"; prune_backups "$WM_DIR/bootstrap.sh"; prune_backups "$WM_DIR/.env"
     return 0
   fi
 
-  log "whatsmiau: FALHOU (bootstrap rc=$rc, health HTTP $code); voltando ao binário anterior"
+  log "whatsmiau: FALHOU (bootstrap rc=$rc); voltando ao binário anterior"
   mv -f "$WM_DIR/whatsmiau.bak-$stamp" "$WM_DIR/whatsmiau"
   [ -f "$WM_DIR/bootstrap.sh.bak-$stamp" ] && cp -p "$WM_DIR/bootstrap.sh.bak-$stamp" "$WM_DIR/bootstrap.sh"
   [ -f "$WM_DIR/.env.bak-$stamp" ] && cp -p "$WM_DIR/.env.bak-$stamp" "$WM_DIR/.env"
-  pm2 restart whatsmiau --update-env >>"$LOG" 2>&1
+
+  # Quando o bootstrap falha antes do pm2, o processo antigo nunca parou: reiniciá-lo
+  # aqui derrubava um serviço bom justo enquanto o banco recusava conexões (#1637).
+  if [ "$pid_before" != 0 ] && [ "$(wm_pid)" = "$pid_before" ] && wm_healthy "$port" "$api_key" 3; then
+    log "whatsmiau: o processo anterior segue no ar; sem restart"
+    return 1
+  fi
+  wm_recover "$port" "$api_key"
   return 1
 }
 
@@ -235,6 +282,10 @@ update_evolution() {
   fi
   (cd "$EVO_DIR" && { npm install || npm install --legacy-peer-deps; }) >>"$LOG" 2>&1
   pm2 restart "$name" --update-env >>"$LOG" 2>&1
+  if ! evolution_healthy "$port"; then
+    log "evolution: FORA DO AR depois do rollback; precisa de intervenção"
+    DOWN="$DOWN evolution"
+  fi
   return 1
 }
 
@@ -375,4 +426,8 @@ case "$ONLY" in all|miau)      update_whatsmiau || log "whatsmiau: etapa termino
 case "$ONLY" in all|evolution) update_evolution || log "evolution: etapa terminou com erro";; esac
 case "$ONLY" in all|chrome)     ensure_chrome    || log "chrome: etapa terminou com erro";; esac
 case "$ONLY" in all|fonts)      ensure_fonts     || log "fontes: etapa terminou com erro";; esac
+if [ -n "$DOWN" ]; then
+  log "serviços fora do ar:$DOWN"
+  exit 2
+fi
 exit 0

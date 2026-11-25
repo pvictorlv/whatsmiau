@@ -56,9 +56,12 @@ func main() {
 		env.Env.ProxyPoolCooldown,
 	)
 
+	// Opened before the deadline below starts: it may wait for the database.
+	store := services.SQLStore()
+
 	ctx, c := context.WithTimeout(context.Background(), 10*time.Second)
 	defer c()
-	whatsmiau.LoadMiau(ctx, services.SQLStore())
+	whatsmiau.LoadMiau(ctx, store)
 
 	app := echo.New()
 	app.Pre(middleware.Recover())

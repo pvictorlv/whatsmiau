@@ -97,6 +97,14 @@ fi
 
 # --- 3. Postgres: cria role + database (idempotente, via peer auth) -----------
 log "configurando Postgres (role/db '$WM_DB_NAME')..."
+# O updater chama este script logo depois de reiniciar o Zapeada, quando todos os
+# pools reabrem juntos e o Postgres pode recusar conexão por alguns segundos.
+pg_tries=0
+until sudo -u postgres psql -tAc "SELECT 1" >/dev/null 2>&1; do
+  pg_tries=$((pg_tries + 1))
+  [ "$pg_tries" -ge 30 ] && die "Postgres não aceitou conexão em 60s; nada foi alterado no serviço"
+  sleep 2
+done
 sudo -u postgres psql -v ON_ERROR_STOP=1 -q <<SQL
 DO \$\$
 BEGIN
@@ -210,12 +218,14 @@ chmod +x "$WM_DIR/whatsmiau"
 # O teto do PM2 é a rede de segurança acima do limite de heap do próprio Go
 # (4 GB por padrão, ver DEFAULT_MEMORY_LIMIT_MB). `pm2 restart` mantém o teto
 # antigo, então o processo é recriado para o teto valer sempre.
+# Sem o backoff, 16 falhas seguidas de partida em poucos segundos fazem o PM2
+# desistir de vez (`errored`) e o WhatsApp fica fora até alguém entrar na máquina.
 WM_MAX_MEMORY="${WM_MAX_MEMORY:-6G}"
 log "(re)iniciando processo pm2 'whatsmiau' (teto de memória $WM_MAX_MEMORY)..."
 pm2 delete whatsmiau >/dev/null 2>&1 || true
 # --interpreter none: executa o binário ELF diretamente
 pm2 start "$WM_DIR/whatsmiau" --name whatsmiau --cwd "$WM_DIR" --interpreter none \
-  --max-memory-restart "$WM_MAX_MEMORY"
+  --max-memory-restart "$WM_MAX_MEMORY" --exp-backoff-restart-delay=1000
 pm2 save >/dev/null 2>&1 || true
 
 # --- 6. health check (autenticado: exercita HTTP + Redis + Postgres) ----------
