@@ -1,7 +1,7 @@
 #!/bin/bash
 #
-# update-extras.sh — atualiza o whatsmiau e o evolution-api desta máquina, se existirem,
-# e garante o Google Chrome e as fontes que o Zapeada usa para gerar o PDF das propostas.
+# update-extras.sh — atualiza o whatsmiau, o evolution-api e o paralela-voice desta máquina,
+# se existirem, e garante o Google Chrome e as fontes que o Zapeada usa para gerar o PDF das propostas.
 #
 # Chamado pelo /home/Installer/cron.sh, que só o aciona quando o servidor está
 # marcado como `waiting_update` no painel: marcar a máquina é a autorização para
@@ -10,6 +10,7 @@
 #
 #   DRY_RUN=1    só diz o que faria (baixa e confere o binário, não troca nada)
 #   ONLY=miau    só o whatsmiau        ONLY=evolution   só o evolution-api
+#   ONLY=voice   só o paralela-voice
 #   ONLY=chrome  só o Chrome do PDF das propostas    ONLY=fonts   só as fontes do PDF
 #
 # Cada etapa registra o resultado e a seguinte roda. Uma etapa que falha desfaz a
@@ -18,6 +19,10 @@
 
 WM_DIR=${WM_DIR:-/home/whatsmiau}
 EVO_DIR=${EVO_DIR:-/home/evolution-api}
+VOICE_DIR=${VOICE_DIR:-/opt/paralela-voice}
+VOICE_SERVICE=${VOICE_SERVICE:-paralela-voice}
+INSTALLER_DIR=${INSTALLER_DIR:-/home/Installer}
+PANEL_URL=${PANEL_URL:-https://system.paralela.net}
 WM_REPO=${WM_REPO:-pvictorlv/whatsmiau}
 RELEASE_URL="https://github.com/${WM_REPO}/releases/latest/download"
 ASSET=whatsmiau-linux-amd64
@@ -290,6 +295,144 @@ update_evolution() {
 }
 
 # --------------------------------------------------------------------------- #
+# paralela-voice
+# --------------------------------------------------------------------------- #
+# O repositório do voice é privado e estas máquinas são dos licenciados: nenhuma tem
+# token do GitHub. O painel guarda a release promovida e a entrega com a mesma key.txt
+# do pacote do Zapeada.
+voice_unit_value() { # $1=opção do ExecStart (-addr, -db) -> valor, ou vazio
+  systemctl cat "$VOICE_SERVICE" 2>/dev/null | grep -E '^ExecStart=' | tail -1 \
+    | grep -oE -- "$1[ =][^ ]+" | head -1 | sed -E "s/^$1[ =]//"
+}
+
+voice_healthy() { # $1=porta [$2=tentativas] -> 0 se o serviço atende
+  local i code
+  for i in $(seq 1 "${2:-15}"); do
+    [ "$i" -gt 1 ] && sleep 2
+    code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$1/healthz")
+    # 401/404: binário antigo, sem a rota, mas de pé. Importa na volta atrás.
+    case "$code" in 200|401|404) return 0;; esac
+  done
+  return 1
+}
+
+voice_backup_db() { # $1=arquivo do banco $2=carimbo; com o serviço parado, para copiar um banco íntegro
+  local dir="$VOICE_DIR/backups" suffix
+  [ -f "$1" ] || return 0
+  mkdir -p "$dir" || return 1
+  for suffix in "" -wal -shm; do
+    if [ -f "$1$suffix" ]; then
+      cp -p "$1$suffix" "$dir/voice.db$suffix.$2" || return 1
+    fi
+  done
+  # Só as cópias feitas aqui (AAAAMMDD-HHMMSS): as manuais, sem o hífen, ficam.
+  ls -1 "$dir"/voice.db.[0-9]*-[0-9]* 2>/dev/null | sort -r | tail -n +$((KEEP_BACKUPS + 1)) | while read -r old; do
+    old=${old##*/voice.db.}
+    rm -f "$dir/voice.db.$old" "$dir/voice.db-wal.$old" "$dir/voice.db-shm.$old"
+  done
+}
+
+update_voice() {
+  local bin="$VOICE_DIR/paralela-voice"
+  if [ ! -x "$bin" ]; then
+    log "voice: não instalado em $VOICE_DIR; nada a fazer"
+    return 0
+  fi
+
+  local key meta path want have version port db tmp stamp
+  key=$(cat "$INSTALLER_DIR/key.txt" 2>/dev/null)
+  if [ -z "$key" ]; then
+    log "voice: sem key.txt para baixar do painel; nada foi alterado"
+    return 1
+  fi
+  if ! meta=$(curl -fsSL --retry 3 -m 60 -H "Authorization: Bearer $key" "$PANEL_URL/api/downloads/last?branch=voice"); then
+    log "voice: o painel não informou a versão; nada foi alterado"
+    return 1
+  fi
+  path=$(jq -r '.data.path // empty' <<<"$meta" 2>/dev/null)
+  want=$(jq -r '.data.checksum // empty' <<<"$meta" 2>/dev/null)
+  version=$(jq -r '.data.version // empty' <<<"$meta" 2>/dev/null)
+  if [ -z "$path" ] || ! [[ "$want" =~ ^[0-9a-f]{64}$ ]]; then
+    log "voice: resposta inesperada do painel; nada foi alterado"
+    return 1
+  fi
+
+  port=$(voice_unit_value -addr); port=${port##*:}; port=${port:-8091}
+  db=$(voice_unit_value -db); db=${db:-$VOICE_DIR/data/voice.db}
+
+  have=$(sha256sum "$bin" | awk '{print $1}')
+  if [ "$have" = "$want" ]; then
+    log "voice: já está em $version (${want:0:12})"
+    if [ "$DRY_RUN" != 1 ] && ! voice_healthy "$port" 3; then
+      log "voice: não responde na porta $port; religando"
+      systemctl restart "$VOICE_SERVICE" >>"$LOG" 2>&1
+      if ! voice_healthy "$port"; then
+        log "voice: FORA DO AR; precisa de intervenção"
+        DOWN="$DOWN voice"
+        return 1
+      fi
+    fi
+    return 0
+  fi
+  if [ "$DRY_RUN" = 1 ]; then
+    log "voice: [dry-run] trocaria ${have:0:12} por ${want:0:12} ($version)"
+    return 0
+  fi
+
+  tmp=$(mktemp -d) || { log "voice: sem diretório temporário"; return 1; }
+  # shellcheck disable=SC2064
+  trap "rm -rf '$tmp'" RETURN
+
+  if ! curl -fsSL --retry 3 -m 600 -H "Authorization: Bearer $key" -o "$tmp/voice" "$PANEL_URL/api/download?file_name=$path"; then
+    log "voice: falha ao baixar $version; nada foi alterado"
+    return 1
+  fi
+  have=$(sha256sum "$tmp/voice" | awk '{print $1}')
+  if [ "$want" != "$have" ]; then
+    log "voice: sha256 do download não confere (esperado=$want obtido=$have); nada foi alterado"
+    return 1
+  fi
+  if [ "$(head -c4 "$tmp/voice" | od -An -tx1 | tr -d ' \n')" != "7f454c46" ] \
+     || [ "$(stat -c %s "$tmp/voice")" -lt 10000000 ]; then
+    log "voice: o download não é um binário ELF plausível; nada foi alterado"
+    return 1
+  fi
+
+  stamp=$(date +%Y%m%d-%H%M%S)
+  if ! cp -p "$bin" "$bin.bak-$stamp" || ! install -m 755 "$tmp/voice" "$bin.new"; then
+    rm -f "$bin.new"
+    log "voice: não consegui preparar a troca (disco?); nada foi alterado"
+    return 1
+  fi
+
+  log "voice: trocando para $version (porta $port)"
+  systemctl stop "$VOICE_SERVICE" >>"$LOG" 2>&1
+  # As migrations rodam sozinhas na partida: sem a cópia do banco não há como voltar.
+  if voice_backup_db "$db" "$stamp"; then
+    mv -f "$bin.new" "$bin"
+    systemctl start "$VOICE_SERVICE" >>"$LOG" 2>&1
+    if voice_healthy "$port"; then
+      log "voice: atualizado e respondendo na porta $port"
+      prune_backups "$bin"
+      return 0
+    fi
+    log "voice: FALHOU; voltando ao binário anterior (cópia do banco em $VOICE_DIR/backups/voice.db.$stamp)"
+    systemctl stop "$VOICE_SERVICE" >>"$LOG" 2>&1
+    mv -f "$bin.bak-$stamp" "$bin"
+  else
+    log "voice: não consegui copiar o banco; a versão anterior foi mantida"
+    rm -f "$bin.new" "$bin.bak-$stamp"
+  fi
+
+  systemctl start "$VOICE_SERVICE" >>"$LOG" 2>&1
+  if ! voice_healthy "$port"; then
+    log "voice: FORA DO AR depois da volta; precisa de intervenção"
+    DOWN="$DOWN voice"
+  fi
+  return 1
+}
+
+# --------------------------------------------------------------------------- #
 # Google Chrome (PDF das propostas)
 # --------------------------------------------------------------------------- #
 # O backend gera o PDF com playwright-core e procura primeiro o Chrome instalado
@@ -424,6 +567,7 @@ XML
 [ "$DRY_RUN" = 1 ] && log "modo dry-run: nada será trocado"
 case "$ONLY" in all|miau)      update_whatsmiau || log "whatsmiau: etapa terminou com erro";; esac
 case "$ONLY" in all|evolution) update_evolution || log "evolution: etapa terminou com erro";; esac
+case "$ONLY" in all|voice)     update_voice     || log "voice: etapa terminou com erro";; esac
 case "$ONLY" in all|chrome)     ensure_chrome    || log "chrome: etapa terminou com erro";; esac
 case "$ONLY" in all|fonts)      ensure_fonts     || log "fontes: etapa terminou com erro";; esac
 if [ -n "$DOWN" ]; then

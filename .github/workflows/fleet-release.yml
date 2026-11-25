@@ -1,13 +1,12 @@
 name: Fleet release
 
 # Every push to the branch the fleet runs becomes a release with the three files
-# deploy/update-extras.sh downloads. It is born as a pre-release: the updater reads
-# releases/latest, which skips pre-releases, so nothing reaches a server until
-# someone promotes it:
+# deploy/update-extras.sh downloads, and servers take it the next time they are marked
+# to update. With the repository variable RELEASE_AUTO_LATEST other than "true" it is born
+# as a pre-release, which the updater skips, until someone promotes it. Promoting an older
+# one is how to roll back:
 #
 #   gh release edit <tag> -R pvictorlv/whatsmiau --prerelease=false --latest
-#
-# Setting the repository variable RELEASE_AUTO_LATEST=true skips that step.
 
 on:
   push:
@@ -52,7 +51,9 @@ jobs:
           GOARCH: amd64
         run: |
           mkdir dist
-          go build -trimpath -ldflags="-s -w" -o "dist/$ASSET" .
+          # No commit stamped inside: a push that does not change the program gives the same
+          # binary, and the updater sees nothing to restart.
+          go build -trimpath -buildvcs=false -ldflags="-s -w" -o "dist/$ASSET" .
 
       - name: Check the binary the way the updater does
         working-directory: dist
