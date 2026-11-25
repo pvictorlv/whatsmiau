@@ -778,6 +778,11 @@ func (s *Whatsmiau) Delete(ctx context.Context, id string) error {
 }
 
 func (s *Whatsmiau) clearInstanceRuntimeState(id string) {
+	// Disconnecting emits no event: without this the observer of a pairing
+	// attempt keeps handing out the QRs of a client that is already gone.
+	if cancel, ok := s.observerCancel.LoadAndDelete(id); ok {
+		cancel()
+	}
 	s.qrCache.Delete(id)
 	s.pairingCache.Delete(id)
 	s.observerRunning.Delete(id)

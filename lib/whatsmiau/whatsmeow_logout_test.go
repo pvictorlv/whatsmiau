@@ -16,10 +16,14 @@ func TestLogoutUnlockedClearsRuntimeStateWithoutClient(t *testing.T) {
 		qrCache:            xsync.NewMap[string, string](),
 		pairingCache:       xsync.NewMap[string, string](),
 		observerRunning:    xsync.NewMap[string, *whatsmeow.Client](),
+		observerCancel:     xsync.NewMap[string, context.CancelFunc](),
 		instanceCache:      xsync.NewMap[string, models.Instance](),
 		connectPhoneNumber: xsync.NewMap[string, string](),
 	}
 
+	attempt, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	service.observerCancel.Store(id, cancel)
 	service.qrCache.Store(id, "qr")
 	service.pairingCache.Store(id, "pairing")
 	service.observerRunning.Store(id, nil)
@@ -30,6 +34,9 @@ func TestLogoutUnlockedClearsRuntimeStateWithoutClient(t *testing.T) {
 		t.Fatalf("logoutUnlocked: %v", err)
 	}
 
+	if attempt.Err() == nil {
+		t.Fatal("pairing attempt observer was not cancelled")
+	}
 	if _, ok := service.qrCache.Load(id); ok {
 		t.Fatal("QR cache was not cleared")
 	}
