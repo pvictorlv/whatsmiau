@@ -1,0 +1,122 @@
+name: Fleet release
+
+# Every push to the branch the fleet runs becomes a release with the three files
+# deploy/update-extras.sh downloads. It is born as a pre-release: the updater reads
+# releases/latest, which skips pre-releases, so nothing reaches a server until
+# someone promotes it:
+#
+#   gh release edit <tag> -R pvictorlv/whatsmiau --prerelease=false --latest
+#
+# Setting the repository variable RELEASE_AUTO_LATEST=true skips that step.
+
+on:
+  push:
+    branches: [feat/zapeada-webhook-compat]
+    paths-ignore: ["**.md"]
+
+concurrency:
+  group: fleet-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  ASSET: whatsmiau-linux-amd64
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Check the deploy scripts
+        run: for script in deploy/*.sh; do bash -n "$script"; done
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -count=1 ./...
+
+      - name: Build
+        env:
+          GOOS: linux
+          GOARCH: amd64
+        run: |
+          mkdir dist
+          go build -trimpath -ldflags="-s -w" -o "dist/$ASSET" .
+
+      - name: Check the binary the way the updater does
+        working-directory: dist
+        run: |
+          test "$(head -c4 "$ASSET" | od -An -tx1 | tr -d ' \n')" = 7f454c46
+          test "$(stat -c %s "$ASSET")" -ge 10000000
+          cp ../deploy/bootstrap.sh .
+          sha256sum "$ASSET" > "$ASSET.sha256"
+          sha256sum -c "$ASSET.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: dist
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      AUTO_LATEST: ${{ vars.RELEASE_AUTO_LATEST }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: dist
+
+      - name: Publish
+        run: |
+          short=$(git rev-parse --short=7 HEAD)
+          tag="fleet-$(TZ=America/Sao_Paulo date +%Y%m%d)-$short"
+          title="Frota $(TZ=America/Sao_Paulo date +%Y-%m-%d) ($short)"
+
+          # What changes for the fleet: everything that is not in the release it runs now.
+          current=$(gh release view --json tagName --jq .tagName 2>/dev/null || true)
+          if [ -n "$current" ]; then
+            echo "Desde a versão da frota ($current):" > notes.md
+            git log --no-merges --cherry-pick --right-only --format='- %s (%h)' "$current...HEAD" >> notes.md
+          else
+            echo "Últimos commits:" > notes.md
+            git log --no-merges -20 --format='- %s (%h)' >> notes.md
+          fi
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+          elif [ "$AUTO_LATEST" = true ]; then
+            gh release create "$tag" dist/* --target "$GITHUB_SHA" --title "$title" --notes-file notes.md --latest
+          else
+            gh release create "$tag" dist/* --target "$GITHUB_SHA" --title "$title" --notes-file notes.md --prerelease
+          fi
+
+          {
+            echo "### $tag"
+            cat notes.md
+            echo
+            echo "Para liberar à frota: \`gh release edit $tag -R $GH_REPO --prerelease=false --latest\`"
+          } >> "$GITHUB_STEP_SUMMARY"
